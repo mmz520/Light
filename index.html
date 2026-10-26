@@ -331,7 +331,7 @@ function setSeed(seed){
 function seedRand(){ return _seedRand(); }
 
 // ===== 地图持久化（带版本号 —— 旧缓存自动丢弃）=====
-const MAP_CACHE_VERSION = 2; // 每次 buildWorld 数据结构变了就 +1
+const MAP_CACHE_VERSION = 3; // 每次 buildWorld 数据结构变了就 +1
 function saveMap(sid, data){
     try {
         const payload = { v:MAP_CACHE_VERSION, ts:Date.now(), data };
@@ -625,7 +625,7 @@ function showMemoryIntro() { /* 已移除 */ }
 function init() {
     clock = new THREE.Clock();
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x1a1410);
+    scene.background = new THREE.Color(0x2a3038);
     // scene.fog = new THREE.FogExp2(0x0a0603, 0.04); // 已禁用迷雾
 
     camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 500);
@@ -649,9 +649,9 @@ function init() {
         renderer = { domElement:cv, shadowMap:{enabled:false}, setSize:()=>{}, setPixelRatio:()=>{} };
     }
 
-    scene.add(new THREE.AmbientLight(0x2a2030, 0.4));
+    scene.add(new THREE.AmbientLight(0xfff4dd, 0.75));
     try {
-        const sun = new THREE.DirectionalLight(0xffd4a0, 0.8);
+        const sun = new THREE.DirectionalLight(0xfff0c0, 1.2);
         sun.position.set(30,50,20);
         sun.castShadow = !IS_MOBILE;
         sun.shadow.mapSize.set(1024,1024);
@@ -720,10 +720,10 @@ function buildWorld(cached) {
                 // color 兜底：旧缓存可能没存 color
                 const col = cd.color !== undefined ? cd.color : B.color;
                 try {
-                    const geo = new THREE.BoxGeometry(cellSize, Math.max(.15, h+0.8), cellSize);
+                    const geo = new THREE.BoxGeometry(cellSize, 0.3, cellSize);
                     const mat = new THREE.MeshLambertMaterial({ color: col });
                     const m = new THREE.Mesh(geo, mat);
-                    m.position.set(cd.wx, h/2, cd.wz);
+                    m.position.set(cd.wx, 0.15, cd.wz);
                     m.receiveShadow = true;
                     tg.add(m);
                     cells[x][z] = {
@@ -794,14 +794,14 @@ function buildWorld(cached) {
                 const wz = z*cellSize - mapSize*cellSize/2;
                 const t = Math.max(0, Math.min(1, (noise1[x][z]+noise2[x][z])*0.5+0.5));
                 const col = lerpColor(B.dark, B.color, t);
-                const geo = new THREE.BoxGeometry(cellSize, Math.max(.15, h+0.8), cellSize);
+                const geo = new THREE.BoxGeometry(cellSize, 0.3, cellSize);
                 const mat = new THREE.MeshLambertMaterial({ color: col });
                 const m = new THREE.Mesh(geo, mat);
-                m.position.set(wx, h/2, wz);
+                m.position.set(wx, 0.15, wz);
                 m.receiveShadow = true;
                 tg.add(m);
                 cells[x][z] = {
-                    x, z, wx, wz, biome, terrain:biome, height:h,
+                    x, z, wx, wz, biome, terrain:biome, height:0,
                     mesh:m, revealed:false, lit:false,
                     building:null, drop:null, fragment:null,
                     buildable:B.buildable
@@ -894,128 +894,193 @@ function getCell(wx,wz) {
     return cells[x][z];
 }
 
-// ================== 玩家 ==================
-function createPlayer() {
-    playerGroup = new THREE.Group();
+// ================== 精灵绘制系统（饥荒风格 2D Canvas） ==================
+// 4方向: 0=down, 1=left, 2=up, 3=right
+// 6帧: 0-1 idle, 2-5 walk cycle
+function drawCharFrame(ctx, px, py, dir, frame, W, palette) {
+    const cx = px + W/2, cy = py + W/2;
+    const legOff = [0, 0, 10, 0, -10, 0][frame];
+    const bobY = [0, -1, 2, -1, 2, 0][frame];
+    ctx.save();
+    ctx.translate(cx, cy + bobY);
 
-    // 脚（黄铜靴）
-    const boots = new THREE.Mesh(
-        new THREE.BoxGeometry(.45, .2, .35),
-        new THREE.MeshStandardMaterial({color:0xb8860b, metalness:.8, roughness:.3})
-    );
-    boots.position.y = .1;
-    playerGroup.add(boots);
+    // 阴影
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(0, 38, 28, 9, 0, 0, Math.PI*2);
+    ctx.fill();
 
-    // 身体（帆布夹克 + 黄铜铆钉）
-    const body = new THREE.Mesh(
-        new THREE.CylinderGeometry(.35, .42, 1.0, 10),
-        new THREE.MeshStandardMaterial({color:0x2a4a2a, roughness:.9})
-    );
-    body.position.y = .7;
-    body.castShadow = true;
-    playerGroup.add(body);
-    // 铆钉装饰
-    for (let i=0;i<5;i++) {
-        const rivet = new THREE.Mesh(
-            new THREE.SphereGeometry(.05, 6, 6),
-            new THREE.MeshStandardMaterial({color:0xd4a03a, metalness:.9, roughness:.2})
-        );
-        rivet.position.set(.35 * Math.cos(i*Math.PI*2/5), .3 + i*.15, .35 * Math.sin(i*Math.PI*2/5));
-        playerGroup.add(rivet);
+    // 腿 + 靴子
+    const legCol = palette.leg || '#3d2a1a';
+    const bootCol = palette.boot || '#5a3a1a';
+    if (dir === 0 || dir === 2) {
+        ctx.fillStyle = legCol;
+        ctx.fillRect(-12 + legOff/2, 15, 10, 22);
+        ctx.fillRect(2 - legOff/2, 15, 10, 22);
+        ctx.fillStyle = bootCol;
+        ctx.fillRect(-14 + legOff/2, 33, 14, 6);
+        ctx.fillRect(0 - legOff/2, 33, 14, 6);
+    } else {
+        ctx.fillStyle = legCol;
+        const lx = dir === 1 ? -6 : -4;
+        ctx.fillRect(lx, 15 + legOff, 10, 22);
+        ctx.fillStyle = bootCol;
+        ctx.fillRect(lx - 2, 33 + legOff, 14, 6);
     }
 
-    // 肩带（亮铜色）
-    const strap = new THREE.Mesh(
-        new THREE.TorusGeometry(.38, .04, 6, 16, Math.PI),
-        new THREE.MeshStandardMaterial({color:0xc8961e, metalness:.8, roughness:.3})
-    );
-    strap.rotation.z = Math.PI/2;
-    strap.position.y = 1.1;
-    playerGroup.add(strap);
+    // 身体（梯形外套）
+    ctx.fillStyle = palette.body || '#3a5a3a';
+    ctx.beginPath();
+    if (dir === 0 || dir === 2) {
+        ctx.moveTo(-22, -10); ctx.lineTo(22, -10);
+        ctx.lineTo(18, 20); ctx.lineTo(-18, 20);
+    } else {
+        ctx.moveTo(-12, -10); ctx.lineTo(12, -10);
+        ctx.lineTo(10, 20); ctx.lineTo(-10, 20);
+    }
+    ctx.closePath(); ctx.fill();
+    // 腰带
+    ctx.fillStyle = palette.belt || '#2a1a0a';
+    if (dir === 0 || dir === 2) ctx.fillRect(-20, 15, 40, 5);
+    else ctx.fillRect(-11, 15, 22, 5);
+    ctx.fillStyle = palette.buckle || '#d4a03a';
+    if (dir === 0 || dir === 2) ctx.fillRect(-4, 15, 8, 5);
+    else ctx.fillRect(-3, 15, 6, 5);
 
-    // 头（亮肤色）
-    const head = new THREE.Mesh(
-        new THREE.BoxGeometry(.5, .5, .5),
-        new THREE.MeshStandardMaterial({color:0xf0d89a, roughness:.8})
-    );
-    head.position.y = 1.5;
-    head.castShadow = true;
-    playerGroup.add(head);
+    // 手臂
+    ctx.fillStyle = palette.body || '#3a5a3a';
+    const swing = [0.3, -0.3, 0.05, -0.05, 0.15, -0.15][frame];
+    if (dir === 0 || dir === 2) {
+        ctx.save(); ctx.translate(-22, -5); ctx.rotate(swing);
+        ctx.fillRect(-4, 0, 8, 22);
+        ctx.fillStyle = palette.wrist || '#d4a03a';
+        ctx.fillRect(-4, 20, 8, 4);
+        ctx.restore();
+        ctx.fillStyle = palette.body || '#3a5a3a';
+        ctx.save(); ctx.translate(22, -5); ctx.rotate(-swing);
+        ctx.fillRect(-4, 0, 8, 22);
+        ctx.fillStyle = palette.wrist || '#d4a03a';
+        ctx.fillRect(-4, 20, 8, 4);
+        ctx.restore();
+    } else {
+        ctx.save(); ctx.translate(dir === 1 ? -12 : 12, -5); ctx.rotate(swing);
+        ctx.fillRect(-3, 0, 6, 22);
+        ctx.fillStyle = palette.wrist || '#d4a03a';
+        ctx.fillRect(-3, 20, 6, 4);
+        ctx.restore();
+    }
 
-    // 蒸汽朋克护目镜（黄铜框架 + 红光玻璃）
-    const goggleFrame = new THREE.Mesh(
-        new THREE.BoxGeometry(.55, .14, .1),
-        new THREE.MeshStandardMaterial({color:0xd4a03a, metalness:.9, roughness:.2})
-    );
-    goggleFrame.position.set(0, 1.52, .28);
-    playerGroup.add(goggleFrame);
+    // 脖子 + 头
+    ctx.fillStyle = palette.skin || '#d4a87a';
+    ctx.fillRect(-4, -18, 8, 8);
+    ctx.fillStyle = palette.face || '#f0d89a';
+    ctx.beginPath(); ctx.arc(0, -28, 14, 0, Math.PI*2); ctx.fill();
 
-    // 左右发光红镜头
-    const lg = new THREE.Mesh(
-        new THREE.CylinderGeometry(.09, .09, .06, 10),
-        new THREE.MeshStandardMaterial({color:0xff2200, emissive:0xff2200, emissiveIntensity:1.2, roughness:.3})
-    );
-    lg.rotation.x = Math.PI/2;
-    const rg = lg.clone();
-    lg.position.set(-.13, 1.52, .33);
-    rg.position.set(.13, 1.52, .33);
-    playerGroup.add(lg, rg);
+    // 脸的细节
+    ctx.fillStyle = '#1a1a1a';
+    if (dir === 0) {
+        ctx.fillRect(-7, -30, 4, 2); ctx.fillRect(3, -30, 4, 2);
+        ctx.fillRect(-3, -24, 6, 2);
+    } else if (dir === 2) {
+        ctx.fillStyle = palette.hair || '#3a2a1a';
+        ctx.beginPath(); ctx.arc(0, -28, 14, Math.PI*0.3, Math.PI*0.7, false); ctx.fill();
+    } else {
+        const ex = dir === 1 ? -2 : 2;
+        ctx.fillRect(ex, -30, 3, 2);
+    }
 
-    // 护目镜光（照亮玩家周围）
-    const goggleLight = new THREE.PointLight(0xff4422, 0.6, 3);
-    goggleLight.position.set(0, 1.52, .4);
-    playerGroup.add(goggleLight);
+    // 帽子
+    ctx.fillStyle = palette.hat || '#1a1a1a';
+    ctx.beginPath(); ctx.ellipse(0, -38, 20, 4, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillRect(-10, -52, 20, 16);
+    ctx.fillStyle = palette.hatband || '#d4a03a';
+    ctx.fillRect(-10, -42, 20, 4);
+    ctx.fillStyle = palette.hattop || '#8a6a1a';
+    ctx.beginPath(); ctx.arc(0, -53, 3, 0, Math.PI*2); ctx.fill();
 
-    // 高筒帽（亮黄铜色 + 黑色帽顶）
-    const hatBand = new THREE.Mesh(
-        new THREE.CylinderGeometry(.32, .34, .12, 10),
-        new THREE.MeshStandardMaterial({color:0xd4a03a, metalness:.8, roughness:.3})
-    );
-    hatBand.position.y = 1.78;
-    playerGroup.add(hatBand);
-    const hatTop = new THREE.Mesh(
-        new THREE.CylinderGeometry(.28, .28, .35, 10),
-        new THREE.MeshStandardMaterial({color:0x1a1a1a, roughness:.9})
-    );
-    hatTop.position.y = 2.0;
-    playerGroup.add(hatTop);
+    ctx.restore();
+}
 
-    // 头顶悬浮标识（发光蓝球 —— 让玩家一眼能找到！）
-    const markerGeo = new THREE.IcosahedronGeometry(.22, 0);
-    const markerMat = new THREE.MeshStandardMaterial({
-        color:0x66ccff, emissive:0x44aaff, emissiveIntensity:1.5, metalness:.4, roughness:.2
-    });
-    const marker = new THREE.Mesh(markerGeo, markerMat);
-    marker.position.set(0, 3.0, 0);
-    marker.userData.isPlayerMarker = true;
-    playerGroup.add(marker);
+function buildCharSheet(palette, name) {
+    const W = 128, DIRS = 4, FRAMES = 6;
+    const cv = document.createElement('canvas');
+    cv.width = FRAMES * W; cv.height = DIRS * W;
+    const ctx = cv.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    for (let d = 0; d < DIRS; d++)
+        for (let f = 0; f < FRAMES; f++)
+            drawCharFrame(ctx, f*W, d*W, d, f, W, palette);
+    cv._sheet = { dirs:DIRS, frames:FRAMES, cell:W, name };
+    return cv;
+}
 
-    // 标识的光柱（淡蓝色向下延伸）
-    const pillarGeo = new THREE.CylinderGeometry(.18, .5, 3, 8, 1, true);
-    const pillarMat = new THREE.MeshBasicMaterial({
-        color:0x44aaff, transparent:true, opacity:.15, side:THREE.DoubleSide, depthWrite:false
-    });
-    const pillar = new THREE.Mesh(pillarGeo, pillarMat);
-    pillar.position.set(0, 1.5, 0);
-    playerGroup.add(pillar);
+// 根据移动方向选精灵行
+function dirFromDelta(dx, dz) {
+    if (Math.abs(dz) > Math.abs(dx)) {
+        return dz > 0 ? 0 : 2; // 0=down(+Z), 2=up(-Z)
+    } else {
+        return dx > 0 ? 3 : 1; // 3=right(+X), 1=left(-X)
+    }
+}
 
-    // 脚下发光圆环（地面标识，玩家中心清晰可见）
-    const ringGeo = new THREE.RingGeometry(.4, .55, 24);
-    const ringMat = new THREE.MeshBasicMaterial({
-        color:0xffdd66, transparent:true, opacity:.6, side:THREE.DoubleSide, depthWrite:false
-    });
+// ================== 玩家 ==================
+function createPlayer() {
+    // 先清旧玩家
+    if (playerGroup) { scene.remove(playerGroup); playerGroup = null; player = null; }
+
+    // 构建玩家精灵表（蒸汽朋克调色板）
+    const pal = {
+        body:'#3a5a3a', leg:'#2d2010', boot:'#5a3a1a',
+        belt:'#2a1a0a', buckle:'#d4a03a', wrist:'#d4a03a',
+        skin:'#d4a87a', face:'#f0d89a', hair:'#3a2a1a',
+        hat:'#1a1a1a', hatband:'#d4a03a', hattop:'#8a6a1a'
+    };
+    const sheet = buildCharSheet(pal, 'player');
+
+    // 精灵 + 动画状态
+    const tex = new THREE.CanvasTexture(sheet);
+    tex.magFilter = THREE.NearestFilter;
+    tex.minFilter = THREE.NearestFilter;
+    tex.repeat.set(1/sheet._sheet.frames, 1/sheet._sheet.dirs);
+    tex.offset.set(0, 0);
+
+    const mat = new THREE.SpriteMaterial({ map: tex, depthTest: true, transparent: true });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(1.6, 1.6, 1);
+    sprite.position.y = 1.8;
+
+    // 玩家脚下阴影圈
+    const shadowGeo = new THREE.CircleGeometry(0.6, 16);
+    const shadowMat = new THREE.MeshBasicMaterial({ color:0x000000, transparent:true, opacity:.35, depthWrite:false });
+    const shadow = new THREE.Mesh(shadowGeo, shadowMat);
+    shadow.rotation.x = -Math.PI/2;
+    shadow.position.y = 0.02;
+
+    // 头顶发光标识（让玩家远远能看见）
+    const ringGeo = new THREE.RingGeometry(0.3, 0.45, 24);
+    const ringMat = new THREE.MeshBasicMaterial({ color:0xffdd66, transparent:true, opacity:.7, side:THREE.DoubleSide, depthWrite:false });
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.rotation.x = -Math.PI/2;
-    ring.position.y = 0.02;
+    ring.position.y = 0.03;
+
+    playerGroup = new THREE.Group();
+    playerGroup.add(shadow);
     playerGroup.add(ring);
+    playerGroup.add(sprite);
+
+    // 动画状态
+    playerGroup.userData.spriteState = {
+        sheet: sheet._sheet,
+        tex: tex,
+        frameTime: 0,
+        frameIdx: 0,
+        dir: 0,
+        isWalking: false,
+        attackTimer: 0
+    };
 
     playerGroup.position.copy(playerData.pos);
     scene.add(playerGroup);
-
-    // 玩家自带光源（跟随移动，照到前方）
-    const pl = new THREE.PointLight(0xffaa44, 1.5, 7);
-    pl.position.set(0, 2, .5);
-    playerGroup.add(pl);
     player = playerGroup;
 }
 
@@ -1684,8 +1749,9 @@ function setupMobile() {
         }
         // 找到相机中心位置放置
         const target = playerData.pos.clone();
-        target.x += Math.cos(playerGroup.rotation.y)*4;
-        target.z += Math.sin(playerGroup.rotation.y)*4;
+        const facingAngle = playerGroup.userData.facingAngle || 0;
+        target.x += Math.cos(facingAngle)*4;
+        target.z += Math.sin(facingAngle)*4;
         tryBuild(playerData.currentBuild, target);
     }, {passive:false});
 
@@ -1771,23 +1837,45 @@ function animate() {
         const c = getCell(playerData.pos.x, playerData.pos.z);
         if (c && c.buildable) playerData.pos.y = c.height;
 
-        playerGroup.rotation.y = Math.atan2(dx, dz);
+        // 方向存到 userData（用于建造放置 + 精灵朝向）
+        playerGroup.userData.facing = dirFromDelta(dx, dz);
+        playerGroup.userData.facingAngle = Math.atan2(dx, dz);
         revealArea(playerData.pos, 7);
         updateLighting();
+    } else if (playerGroup) {
+        // 静止也更新朝向（保持上一帧方向）
     }
 
     if (playerGroup) {
         playerGroup.position.copy(playerData.pos);
         playerGroup.position.y += Math.sin(gameTime*5)*.04*moved;
 
-        // 头顶蓝球浮动 + 旋转（让玩家远远就能看见）
-        playerGroup.traverse(o => {
-            if (o.userData.isPlayerMarker) {
-                o.position.y = 3.0 + Math.sin(gameTime*3)*0.25;
-                o.rotation.y = gameTime*1.5;
-                o.rotation.x = gameTime*0.8;
+        // 精灵帧动画更新
+        const st = playerGroup.userData.spriteState;
+        if (st) {
+            st.frameTime += dt;
+            st.isWalking = moved;
+            st.dir = moved ? playerGroup.userData.facing || 0 : st.dir || 0;
+            if (st.isWalking) {
+                // 走路 8 FPS：0→2→3→4→5→3 循环
+                if (st.frameTime >= 0.125) {
+                    st.frameTime = 0;
+                    const walkSeq = [2, 3, 4, 5, 4, 3];
+                    const curIdx = walkSeq.indexOf(st.frameIdx);
+                    st.frameIdx = walkSeq[(curIdx + 1) % walkSeq.length];
+                }
+            } else {
+                // 静止：空闲呼吸 2秒一次
+                if (st.frameTime >= 2) {
+                    st.frameTime = 0;
+                    st.frameIdx = st.frameIdx === 0 ? 1 : 0;
+                }
             }
-        });
+            // 更新 UV offset（精灵行=dir，列=frame）
+            st.tex.offset.x = (st.frameIdx % st.sheet.frames) / st.sheet.frames;
+            st.tex.offset.y = (st.dir % st.sheet.dirs) / st.sheet.dirs;
+            st.tex.needsUpdate = true;
+        }
     }
 
     // 饥荒式摄像机：固定 45° 俯角，玩家永远在屏幕中心
