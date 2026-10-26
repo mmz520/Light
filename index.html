@@ -308,7 +308,7 @@ const CFG = {
 
 // ===== 精灵表配置 =====
 const SPRITE = {
-    player: { walk:'player_walk.png',  cols:6, rows:8, scaleY:1.4, action:'player_action.png', colsA:6, rowsA:4 },
+    player: { walk:'player_walk.png',  cols:6, rows:8, scaleY:1.4, action:'player_action.png', colsA:6, rowsA:8 },
     hound:  { walk:'enemy1.png',       cols:6, rows:8, scaleY:1.2 },
     beast:  { walk:'enemy2.png',       cols:6, rows:8, scaleY:1.6 }
 };
@@ -645,6 +645,8 @@ async function init() {
     const sp = cells._spawn || {x:Math.floor(mapSize/2), z:Math.floor(mapSize/2)};
     playerData.pos.set(cells[sp.x][sp.z].wx, cells[sp.x][sp.z].height + 0.6, cells[sp.x][sp.z].wz);
     createPlayer();
+    // 初始摄像机对齐玩家，避免第一帧看不到画面
+    if (camera) camera.position.set(playerData.pos.x, playerData.pos.y + 17, playerData.pos.z + 12);
     createCampfire();
     revealArea(playerData.pos, 8);
 
