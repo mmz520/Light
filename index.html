@@ -330,16 +330,41 @@ function setSeed(seed){
 }
 function seedRand(){ return _seedRand(); }
 
-// ===== 地图持久化 =====
+// ===== 地图持久化（带版本号 —— 旧缓存自动丢弃）=====
+const MAP_CACHE_VERSION = 2; // 每次 buildWorld 数据结构变了就 +1
 function saveMap(sid, data){
-    try { localStorage.setItem('sandbox_map_'+sid, JSON.stringify(data)); } catch(e){}
+    try {
+        const payload = { v:MAP_CACHE_VERSION, ts:Date.now(), data };
+        localStorage.setItem('sandbox_map_'+sid, JSON.stringify(payload));
+    } catch(e){}
 }
 function loadMap(sid){
     try {
         const raw = localStorage.getItem('sandbox_map_'+sid);
-        return raw ? JSON.parse(raw) : null;
+        if (!raw) return null;
+        const obj = JSON.parse(raw);
+        // 版本不对 → 丢弃旧缓存，强制重新生成
+        if (!obj.v || obj.v !== MAP_CACHE_VERSION) {
+            localStorage.removeItem('sandbox_map_'+sid);
+            return null;
+        }
+        return obj.data;
     } catch(e){ return null; }
 }
+
+// ===== 启动时清掉所有过期/旧格式缓存 =====
+try {
+    for (let i=localStorage.length-1; i>=0; i--) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('sandbox_map_')) {
+            const raw = localStorage.getItem(k);
+            try {
+                const obj = JSON.parse(raw);
+                if (!obj.v || obj.v !== MAP_CACHE_VERSION) localStorage.removeItem(k);
+            } catch(e) { localStorage.removeItem(k); }
+        }
+    }
+} catch(e){}
 
 // 稀有度
 const RARITY = {
@@ -682,28 +707,63 @@ function buildWorld(cached) {
 
     if (cached && cached.terrain && cached.terrain.length === mapSize) {
         // —— A. 从缓存恢复（地图稳定）——
+        let cachedOk = true;
         for (let x=0; x<mapSize; x++) {
             cells[x] = [];
             for (let z=0; z<mapSize; z++) {
                 const cd = cached.terrain[x][z];
+                if (!cd || cd.biome === undefined || cd.height === undefined || cd.wx === undefined || cd.wz === undefined) {
+                    cachedOk = false; break;
+                }
                 const B = BIOMES[cd.biome] || BIOMES.grassland;
                 const h = cd.height;
-                const geo = new THREE.BoxGeometry(cellSize, Math.max(.15, h+0.8), cellSize);
-                const mat = new THREE.MeshLambertMaterial({ color: cd.color });
-                const m = new THREE.Mesh(geo, mat);
-                m.position.set(cd.wx, h/2, cd.wz);
-                m.receiveShadow = true;
-                tg.add(m);
-                cells[x][z] = {
-                    x, z, wx: cd.wx, wz: cd.wz,
-                    biome: cd.biome, terrain: cd.biome, height: h,
-                    mesh: m, revealed:false, lit:false,
-                    building:null, drop:null, fragment:null,
-                    buildable: B.buildable
-                };
+                // color 兜底：旧缓存可能没存 color
+                const col = cd.color !== undefined ? cd.color : B.color;
+                try {
+                    const geo = new THREE.BoxGeometry(cellSize, Math.max(.15, h+0.8), cellSize);
+                    const mat = new THREE.MeshLambertMaterial({ color: col });
+                    const m = new THREE.Mesh(geo, mat);
+                    m.position.set(cd.wx, h/2, cd.wz);
+                    m.receiveShadow = true;
+                    tg.add(m);
+                    cells[x][z] = {
+                        x, z, wx: cd.wx, wz: cd.wz,
+                        biome: cd.biome, terrain: cd.biome, height: h,
+                        mesh: m, revealed:false, lit:false,
+                        building:null, drop:null, fragment:null,
+                        buildable: B.buildable
+                    };
+                } catch(e){
+                    cachedOk = false; break;
+                }
             }
+            if (!cachedOk) break;
         }
-        cells._spawn = cached.spawn;
+        if (!cachedOk) {
+            // 缓存损坏 → 强制重新 seed 生成（删掉走 else 分支）
+            localStorage.removeItem('sandbox_map_'+sandboxId);
+            console.warn('缓存损坏，强制重新生成地图');
+            cached = null;
+            cells = [];
+            tg.clear();
+            // 下面会走 seed 生成
+        } else {
+            cells._spawn = cached.spawn || {x:Math.floor(mapSize/2), z:Math.floor(mapSize/2)};
+            // 重新创建 fog（cached 分支也要）
+            if (scene.userData.fogX) {
+                scene.traverse(o => { if (o.material && o.material.map === scene.userData.fogT) { scene.remove(o); } });
+            }
+            const fogC = document.createElement('canvas'); fogC.width=256; fogC.height=256;
+            const fogX = fogC.getContext('2d'); fogX.fillStyle='#000'; fogX.fillRect(0,0,256,256);
+            const fogT = new THREE.CanvasTexture(fogC);
+            const fogM = new THREE.MeshBasicMaterial({ map:fogT, transparent:true, depthWrite:false, side:THREE.DoubleSide });
+            const fogG = new THREE.PlaneGeometry(mapSize*cellSize+4, mapSize*cellSize+4);
+            const fog = new THREE.Mesh(fogG, fogM); fog.rotation.x = -Math.PI/2; fog.position.y = 5;
+            scene.add(fog);
+            scene.userData.fogX = fogX;
+            scene.userData.fogT = fogT;
+            return; // ✅ 完成，跳过下面的 seed 生成
+        }
     } else {
         // —— B. 种子生成（首次 / 权重变了）——
         // 归一化权重
