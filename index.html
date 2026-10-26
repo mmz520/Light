@@ -167,12 +167,6 @@ canvas{display:block;touch-action:none}
         <div class="start-num" id="sandboxNum">—</div>
         <div class="start-num-label">沙箱编号</div>
     </div>
-    <div class="start-story">
-        「你是手眼通天科技有限公司旗下真人秀<br>「生存游戏」第 <span id="showNum" style="color:#c9a961">—</span> 场的参与者。」<br><br>
-        「活动全程直播。你的记忆被暂时封存，<br>脑海中只保留最基础的生存常识。」<br><br>
-        「规则很简单：活着，或者，死。」<br><br>
-        「——工作人员失误遗失的碎片，或许能带你找到出口。」
-    </div>
     <div class="start-enter" id="startEnter">点击 / 触屏 进入</div>
 </div>
 
@@ -354,42 +348,31 @@ let mobile = { move:{x:0,y:0}, jid:null, jc:null };
 
 // ================== 开始动画 ==================
 function rollStartSequence() {
-    // 1. 随机滚动数字 0-100
+    // 随机滚动数字 0-99，然后定格
     sandboxId = Math.floor(Math.random()*100);
     const numEl = document.getElementById('sandboxNum');
-    let n = 0;
+    let count = 0;
     const iv = setInterval(() => {
         numEl.textContent = Math.floor(Math.random()*100);
-        n++;
-        if (n >= 30) {
+        count++;
+        if (count >= 30) {
             clearInterval(iv);
             numEl.textContent = sandboxId;
             numEl.style.color = '#ffdd66';
         }
-    }, 60);
+    }, 50);
 
-    // 2. 等待动画 + 点击进入
-    const showEl = document.getElementById('showNum');
-    showEl.textContent = sandboxId + 47; // 场次 = 沙箱 + 47
-
-    const screen = document.getElementById('startScreen');
-    const handler = () => {
+    // 点击/触屏进入（用 document 捕获，避免子元素拦截）
+    const start = () => {
         if (gameState !== 'start') return;
         gameState = 'opening';
-        screen.classList.add('fadeout');
-        setTimeout(() => startOpening(), 600);
+        document.getElementById('startScreen').classList.add('fadeout');
+        document.getElementById('startScreen').style.pointerEvents = 'none';
+        setTimeout(() => startOpening(), 700);
     };
-    screen.addEventListener('click', handler);
-    screen.addEventListener('touchstart', handler, { once:true });
-
-    if (IS_MOBILE) {
-        document.getElementById('joystick').classList.add('active');
-        document.getElementById('mobBtns').classList.add('active');
-    }
-    setTimeout(()=>{
-        document.getElementById('joystick').classList.add('active');
-        document.getElementById('mobBtns').classList.add('active');
-    }, 2000);
+    // 同时绑定 click 和 touchstart（某些移动端 touchstart 会阻止后续 click）
+    document.addEventListener('click', start, { once:true });
+    document.addEventListener('touchstart', start, { once:true, passive:true });
 }
 
 function startOpening() {
@@ -416,37 +399,11 @@ function startOpening() {
     setTimeout(() => {
         eye.style.opacity = '0';
         eye.style.transition = 'opacity .4s';
-        document.getElementById('sandboxNum').parentElement.parentElement.style.display = 'none';
-
-        // 载入"记忆碎片"提示
-        setTimeout(showMemoryIntro, 500);
+        gameState = 'playing';
     }, 1800);
 }
 
-function showMemoryIntro() {
-    gameState = 'playing';
-    const tip = document.createElement('div');
-    tip.className = 'mem-intro';
-    tip.innerHTML = `
-        <h3>封存的记忆浮现</h3>
-        <div>你睁开眼。<br>
-        一堆<span style="color:#ffdd66">篝火</span>在身旁燃烧，<br>
-        背包里有少量<span style="color:#ffaa44">口粮</span>和一些<span style="color:#ffaa44">木材</span>。<br><br>
-        沙箱的天空灰暗。<br>
-        远处有不明声响。<br><br>
-        <span class="key">系统会定时投放物资</span>，<br>
-        只要进入你的视野，<span class="key">收集器会自动收集</span>。<br><br>
-        注意那闪着<span style="color:#a855f7">紫色光芒的碎片</span>——<br>
-        它们，可能是你回家的路。</div>
-        <div style="margin-top:14px;font-size:9px;color:#8b6914;letter-spacing:2px">（点击/触屏 继续）</div>
-    `;
-    document.body.appendChild(tip);
-    const close = () => {
-        tip.remove();
-    };
-    tip.addEventListener('click', close);
-    tip.addEventListener('touchstart', close, { once:true, passive:true });
-}
+function showMemoryIntro() { /* 已移除 */ }
 
 // ================== 初始化 ==================
 function init() {
