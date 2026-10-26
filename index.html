@@ -492,8 +492,11 @@ function rollStartSequence() {
             }
         }, 45);
     };
-    document.addEventListener('click', start, { once:true });
-    document.addEventListener('touchstart', start, { once:true, passive:true });
+    // 更稳健：绑在 startScreen 自身上 + 全局兜底
+    const sc = document.getElementById('startScreen');
+    sc.addEventListener('click', start);
+    sc.addEventListener('touchstart', start, { passive:true });
+    document.addEventListener('keydown', e => { if (e.code === 'Enter' || e.code === 'Space') start(); });
 }
 
 // 真正重建世界（使用当前 BIOME 权重）
@@ -599,8 +602,6 @@ function init() {
 
     if (IS_MOBILE) setupMobile();
 
-    settingsInit();
-    rollStartSequence();
     animate();
 }
 
@@ -1773,9 +1774,37 @@ function endGame(result) {
 }
 
 // ================== 启动 ==================
+// 全局错误捕获（调试用）
+window.addEventListener('error', e => {
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(10,6,3,.95);color:#ff6666;padding:20px;font:12px monospace;white-space:pre-wrap;overflow:auto';
+    box.textContent = '❌ JS ERROR\n' + (e.message||e.error?.message||String(e)) + '\n\nStack:\n' + (e.error?.stack||e.filename+':'+e.lineno);
+    document.body.appendChild(box);
+});
+window.addEventListener('unhandledrejection', e => {
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(10,6,3,.95);color:#ff6666;padding:20px;font:12px monospace;white-space:pre-wrap;overflow:auto';
+    box.textContent = '❌ PROMISE ERROR\n' + String(e.reason);
+    document.body.appendChild(box);
+});
+
 requestAnimationFrame(()=>{
-    clock = new THREE.Clock();
-    init();
+    // UI 优先：保证设置面板和开始按钮在任何 WebGL 错误前都能工作
+    try { settingsInit(); } catch(e) { console.warn('settingsInit failed', e); }
+
+    try {
+        clock = new THREE.Clock();
+        init();
+    } catch(err) {
+        console.error('INIT FAILED:', err);
+        const box = document.createElement('div');
+        box.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(10,6,3,.95);color:#ff6666;padding:20px;font:12px monospace;white-space:pre-wrap;overflow:auto';
+        box.textContent = '❌ INIT FAILED\n' + err.message + '\n\nStack:\n' + err.stack;
+        document.body.appendChild(box);
+    }
+
+    // 不管 init 是否成功，都绑定开始按钮（保底）
+    try { rollStartSequence(); } catch(e) { console.warn('rollStartSequence failed', e); }
 });
 </script>
 </body>
