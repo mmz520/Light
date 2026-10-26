@@ -321,7 +321,6 @@ function preloadSprites() {
     const L = new THREE.TextureLoader();
     const load = (url) => new Promise(res => {
         L.load(url, tex => {
-            tex.flipY = false;
             tex.magFilter = THREE.NearestFilter;
             tex.minFilter = THREE.NearestFilter;
             tex.generateMipmaps = false;
@@ -350,8 +349,11 @@ function dir8(dx, dz) {
 // 更新精灵帧UV
 function updateSpriteUV(state, tex, cols, rows, frameIdx, dirIdx) {
     if (!tex) return;
+    tex.repeat.set(1 / cols, 1 / rows);
     tex.offset.x = (frameIdx % cols) / cols;
-    tex.offset.y = (dirIdx % rows) / rows;
+    // ImageLoader 默认 flipY=true：纹理 v=0 是图片底部，v=1 是图片顶部
+    // 我们的精灵表行0（图片顶部）= DOWN，需要映射到 offset.y = (rows-1-dirIdx)/rows
+    tex.offset.y = ((rows - 1) - (dirIdx % rows)) / rows;
 }
 
 // ===== 地貌权重（设置页可改，和为 100） =====
