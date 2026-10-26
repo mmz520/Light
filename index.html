@@ -1527,12 +1527,13 @@ function animate() {
 
     // 昼夜（WebGL 降级时 sun 可能不存在）
     const sun = scene.userData.sun;
+    let night = false;
     if (sun) {
         const prog = (gameTime % CFG.DAY_LEN) / CFG.DAY_LEN;
         sun.position.x = Math.cos(prog*Math.PI*2)*45;
         sun.position.y = Math.sin(prog*Math.PI*2)*45;
         sun.position.z = 20;
-        const night = sun.position.y < 0;
+        night = sun.position.y < 0;
         sun.intensity = night ? 0.15 : 0.8;
     }
 
