@@ -21,6 +21,10 @@ canvas{display:block;touch-action:none}
 .start-num-label{position:absolute;bottom:8px;font-size:10px;color:#5a4a2a;letter-spacing:4px;text-transform:uppercase}
 .start-story{max-width:500px;text-align:center;font-size:11px;color:#6a5a3a;line-height:1.8;margin-top:40px;padding:0 20px}
 .start-enter{margin-top:30px;font-size:11px;color:#8b6914;letter-spacing:3px;animation:pulse 1.5s infinite}
+.start-load{display:flex;align-items:center;gap:10px;margin-top:18px;width:220px}
+.start-load-bar{flex:1;height:4px;background:rgba(139,105,20,.2);border-radius:2px;overflow:hidden}
+.start-load-fill{height:100%;width:0;background:#c9a961;border-radius:2px;transition:width .3s;box-shadow:0 0 8px rgba(201,169,97,.6)}
+.start-load-pct{font-size:10px;color:#8b6914;min-width:36px;text-align:right;font-family:monospace}
 .settings-btn{position:absolute;right:20px;bottom:20px;background:rgba(10,6,3,.7);border:1px solid #5a4a2a;color:#c9a961;padding:8px 14px;font-size:12px;cursor:pointer;font-family:inherit;letter-spacing:2px;border-radius:4px;transition:all .2s}
 .settings-btn:hover{background:#8b6914;color:#0a0603}
 
@@ -194,6 +198,10 @@ canvas{display:block;touch-action:none}
         <div class="start-num" id="sandboxNum">—</div>
         <div class="start-num-label">沙箱编号</div>
     </div>
+    <div class="start-load" id="startLoad">
+        <div class="start-load-bar"><div class="start-load-fill" id="loadBarFill"></div></div>
+        <div class="start-load-pct" id="loadPct">0%</div>
+    </div>
     <div class="start-enter" id="startEnter">点击 / 触屏 进入</div>
     <button class="settings-btn" id="openSettings" title="游戏设置">⚙ 设置</button>
 </div>
@@ -343,6 +351,9 @@ let spriteTex = { player:{walk:null,action:null}, hound:null, beast:null };
 // 预加载所有精灵贴图
 function preloadSprites() {
     const L = new THREE.TextureLoader();
+    const total = 4;
+    let done = 0;
+    const bump = () => { done++; loadProgress = done / total; updateLoadBar(); };
     const load = (url) => new Promise(res => {
         L.load(url, tex => {
             tex.magFilter = THREE.NearestFilter;
@@ -350,8 +361,9 @@ function preloadSprites() {
             tex.generateMipmaps = false;
             // 正确标记 sRGB，避免画面发灰/发糊
             if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+            bump();
             res(tex);
-        }, undefined, () => res(null));
+        }, undefined, () => { bump(); res(null); });
     });
     return Promise.all([
         load(SPRITE.player.walk).then(t => spriteTex.player.walk = t),
@@ -359,6 +371,14 @@ function preloadSprites() {
         load(SPRITE.hound.walk).then(t => spriteTex.hound = t),
         load(SPRITE.beast.walk).then(t => spriteTex.beast = t)
     ]);
+}
+
+// 更新开始画面上的加载进度条
+function updateLoadBar() {
+    const bar = document.getElementById('loadBarFill');
+    const pct = document.getElementById('loadPct');
+    if (bar) bar.style.width = (loadProgress * 100).toFixed(0) + '%';
+    if (pct) pct.textContent = (loadProgress * 100).toFixed(0) + '%';
 }
 
 // 8方向映射 (dx, dz) → 0-7
@@ -457,6 +477,9 @@ if (IS_MOBILE) document.body.classList.add('is-mobile');
 let scene, camera, renderer, clock;
 let keys = {};
 let gameState = 'start'; // start / opening / playing / victory
+let initReady = false; // init() 是否完成（精灵+世界+首帧）
+let initPromise = null; // 保存 init() 的 Promise，供开始画面等待
+let loadProgress = 0; // 精灵加载进度 0-1
 let gameTime = 0;
 let nextDropTime = 0;
 let sandboxId = 0;
@@ -543,15 +566,36 @@ function settingsInit() {
 function rollStartSequence() {
     const numEl = document.getElementById('sandboxNum');
 
-    // 点击/触屏进入 → 沙箱号码滚动 → 地图实际生成 → 睁眼特效 → 进入游戏
-    const start = (e) => {
+    // 点击/触屏进入 → 等待资源就绪 → 沙箱号码滚动 → 地图实际生成 → 睁眼特效 → 进入游戏
+    const start = async (e) => {
         if (gameState !== 'start') return;
         // 不要拦截 settings 弹窗
         if (e && e.target && e.target.closest('#settingsModal')) return;
 
+        const startScreen = document.getElementById('startScreen');
+        const enterEl = document.getElementById('startEnter');
+
+        // 若 init 未完成（精灵图还在加载），先显示加载进度，等首帧就绪再继续
+        if (!initReady) {
+            if (enterEl) enterEl.textContent = '资源加载中…';
+            // 实时刷新百分比
+            const tick = setInterval(() => {
+                if (enterEl && loadProgress < 1) {
+                    enterEl.textContent = '资源加载中 ' + (loadProgress * 100).toFixed(0) + '%';
+                }
+            }, 100);
+            try {
+                await initPromise;
+            } catch (err) {
+                clearInterval(tick);
+                return;
+            }
+            clearInterval(tick);
+            if (enterEl) enterEl.textContent = '点击 / 触屏 进入';
+        }
+
         gameState = 'opening';
         numEl.style.color = '#c9a961';
-        const startScreen = document.getElementById('startScreen');
         startScreen.classList.add('fadeout');
         startScreen.style.pointerEvents = 'none';
 
@@ -876,6 +920,9 @@ async function init() {
     if (IS_MOBILE) setupMobile();
 
     animate();
+
+    // 标记 init 完成，开始画面可安全淡出（此时渲染循环已启动，画面不会空白）
+    initReady = true;
 }
 
 function onResize(){ camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth,window.innerHeight); }
@@ -2339,7 +2386,7 @@ requestAnimationFrame(()=>{
     try { settingsInit(); } catch(e) { console.warn('settingsInit failed', e); }
 
     clock = new THREE.Clock();
-    init().catch(err => {
+    initPromise = init().catch(err => {
         console.error('INIT FAILED (async):', err);
         if (window.__showFatal) window.__showFatal('初始化失败', err.message || String(err), err.stack || '');
     });
