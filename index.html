@@ -2,6 +2,11 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0a0603">
 <title>迷雾之地 - 蒸汽朋克生存建造</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -116,6 +121,68 @@ canvas{display:block}
 
 .victory-bar{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(10,6,3,.9);border:2px solid #c9a961;padding:6px 20px;font-size:12px;color:#c9a961;text-transform:uppercase;letter-spacing:2px;z-index:10}
 .victory-bar span{color:#ffdd66;font-weight:bold}
+
+/* ============ 移动端虚拟摇杆 ============ */
+.virtual-joystick{position:absolute;left:20px;bottom:20px;width:140px;height:140px;border-radius:50%;background:rgba(42,31,21,.4);border:2px solid #8b6914;z-index:30;display:none;touch-action:none;box-shadow:0 0 20px rgba(0,0,0,.6)}
+.virtual-joystick.active{display:block}
+.joystick-knob{position:absolute;width:60px;height:60px;border-radius:50%;background:radial-gradient(circle,#c9a961 0%,#8b6914 100%);top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;box-shadow:0 0 10px rgba(201,169,97,.5)}
+
+/* ============ 移动端触屏按键 ============ */
+.mobile-buttons{position:absolute;right:15px;bottom:15px;display:none;flex-direction:column;gap:12px;z-index:30}
+.mobile-buttons.active{display:flex}
+.mbtn{width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#3a2f1f,#2a1f15);border:2px solid #8b6914;color:#c9a961;font-size:20px;display:flex;align-items:center;justify-content:center;touch-action:none;box-shadow:0 0 10px rgba(0,0,0,.6);user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+.mbtn:active{background:linear-gradient(135deg,#5a4f2f,#4a3f1f);border-color:#ffd700;box-shadow:0 0 15px rgba(255,215,0,.7)}
+.mbtn-label{position:absolute;font-size:9px;color:#8b6914;bottom:-14px;left:50%;transform:translateX(-50%);text-transform:uppercase;letter-spacing:1px}
+.mbtn-row{display:flex;gap:12px;justify-content:flex-end}
+.mbtn-small{width:48px;height:48px;font-size:16px}
+
+/* ============ 响应式 / 移动端 ============ */
+@media (max-width: 768px) {
+    .game-title{font-size:36px;letter-spacing:4px}
+    .game-subtitle{font-size:12px;letter-spacing:6px;margin-bottom:30px}
+
+    .hud-top{flex-wrap:wrap;gap:8px}
+    .stat-panel{padding:5px 10px;min-width:0;font-size:10px}
+    .stat-title{font-size:9px;margin-bottom:3px}
+    .stat-bar-container{height:10px;margin:2px 0}
+    .stat-text{font-size:8px}
+
+    .resources{gap:6px;max-width:100%;font-size:10px}
+    .resource-item{padding:2px 5px;font-size:9px}
+    .resource-icon{width:10px;height:10px;margin-right:2px}
+
+    .minimap{width:110px;height:110px;top:auto;bottom:150px;right:10px}
+
+    .build-menu{bottom:auto;top:50%;left:50%;transform:translate(-50%,-20%);flex-wrap:wrap;justify-content:center;gap:5px;padding:6px;max-width:92vw}
+    .build-item{width:54px;height:60px}
+    .build-icon{font-size:18px}
+    .build-name{font-size:8px}
+    .build-cost{display:none}
+
+    .tutorial-panel{top:10px;left:10px;right:10px;transform:none;width:auto;max-height:40vh;overflow-y:auto;padding:10px}
+    .tutorial-title{font-size:14px}
+    .tutorial-desc{font-size:11px;line-height:1.5}
+
+    .action-hint{top:auto;bottom:280px;right:10px;left:10px;transform:none;max-width:none}
+
+    .message-log{left:10px;bottom:260px;width:45vw;max-height:120px}
+    .message{font-size:10px;padding:3px 6px;margin:2px 0}
+
+    .progress-bar{bottom:200px;width:160px}
+
+    .victory-bar{font-size:10px;padding:4px 10px;letter-spacing:1px}
+
+    .interact-hint{font-size:11px;padding:8px 14px}
+
+    /* 移动端隐藏桌面提示 */
+    body.is-mobile .hint{display:none}
+}
+
+/* 安全区域（iPhone 刘海/底部横条） */
+@supports (padding: max(0px)) {
+    .virtual-joystick{left: max(20px, env(safe-area-inset-left)); bottom: max(20px, env(safe-area-inset-bottom))}
+    .mobile-buttons{right: max(15px, env(safe-area-inset-right)); bottom: max(15px, env(safe-area-inset-bottom))}
+}
 </style>
 </head>
 <body>
@@ -191,6 +258,23 @@ canvas{display:block}
     <div class="end-title" id="endTitle">黎明降临</div>
     <div class="end-stats" id="endStats"></div>
     <button class="restart-btn" onclick="location.reload()">重新开始</button>
+</div>
+
+<!-- ============ 移动端虚拟摇杆 ============ -->
+<div class="virtual-joystick" id="joystick">
+    <div class="joystick-knob" id="joystickKnob"></div>
+</div>
+
+<!-- ============ 移动端触屏按键 ============ -->
+<div class="mobile-buttons" id="mobileButtons">
+    <div class="mbtn-row" style="gap:10px">
+        <div class="mbtn mbtn-small" id="btnCamera" style="position:relative">📷<span class="mbtn-label">视角</span></div>
+        <div class="mbtn" id="btnAttack" style="position:relative">⚔️<span class="mbtn-label">攻击</span></div>
+    </div>
+    <div class="mbtn-row" style="gap:10px">
+        <div class="mbtn" id="btnInteract" style="position:relative">✋<span class="mbtn-label">交互</span></div>
+        <div class="mbtn" id="btnBuild" style="position:relative">🔨<span class="mbtn-label">建造</span></div>
+    </div>
 </div>
 
 <script type="importmap">
@@ -305,6 +389,20 @@ let gameTime = 0;
 let dayCount = 1;
 let isNight = false;
 
+// 移动端检测（UA + touch capability）
+const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|BlackBerry/i.test(navigator.userAgent) || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+if (IS_MOBILE) document.body.classList.add('is-mobile');
+
+// 移动端输入状态
+let mobileInput = {
+    move: { x: 0, y: 0 },  // 摇杆归一化方向
+    joystickTouchId: null,
+    joystickCenter: null,
+    draggingCamera: false,
+    cameraTouchId: null,
+    lastCameraX: 0, lastCameraY: 0
+};
+
 let mapCells = [];
 let threats = [];
 let buildQueue = [];
@@ -338,11 +436,17 @@ function init() {
     camera.position.set(0, 22, 18);
     camera.lookAt(0, 0, 0);
 
-    renderer = new THREE.WebGLRenderer({ antialias: true });
+    // 移动端性能降级
+    renderer = new THREE.WebGLRenderer({ antialias: !IS_MOBILE, powerPreference: IS_MOBILE ? 'low-power' : 'high-performance' });
+    renderer.setPixelRatio(IS_MOBILE ? Math.min(window.devicePixelRatio, 1.5) : Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.enabled = !IS_MOBILE;
+    renderer.shadowMap.type = IS_MOBILE ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
     document.body.appendChild(renderer.domElement);
+
+    // 禁用移动端双指缩放/捏合
+    renderer.domElement.style.touchAction = 'none';
 
     scene.add(new THREE.AmbientLight(0x2a2030, 0.35));
     const sun = new THREE.DirectionalLight(0xffd4a0, 0.8);
@@ -376,8 +480,132 @@ function init() {
     window.addEventListener('keyup', e => keys[e.code] = false);
     renderer.domElement.addEventListener('click', onMouseClick);
 
+    // ============ 移动端触摸控制 ============
+    if (IS_MOBILE) initMobileControls();
+
     startGame();
     animate();
+}
+
+function initMobileControls() {
+    const joystick = document.getElementById('joystick');
+    const knob = document.getElementById('joystickKnob');
+    const btnAttack = document.getElementById('btnAttack');
+    const btnInteract = document.getElementById('btnInteract');
+    const btnBuild = document.getElementById('btnBuild');
+    const btnCamera = document.getElementById('btnCamera');
+
+    // 显示移动端控件
+    joystick.classList.add('active');
+    document.getElementById('mobileButtons').classList.add('active');
+
+    // 摇杆逻辑
+    joystick.addEventListener('touchstart', e => {
+        e.preventDefault();
+        const t = e.changedTouches[0];
+        mobileInput.joystickTouchId = t.identifier;
+        mobileInput.joystickCenter = { x: t.clientX, y: t.clientY };
+        updateJoystick(t.clientX, t.clientY);
+    }, { passive: false });
+
+    joystick.addEventListener('touchmove', e => {
+        e.preventDefault();
+        for (const t of e.changedTouches) {
+            if (t.identifier === mobileInput.joystickTouchId) {
+                updateJoystick(t.clientX, t.clientY);
+            }
+        }
+    }, { passive: false });
+
+    const resetJoystick = e => {
+        e.preventDefault();
+        for (const t of e.changedTouches) {
+            if (t.identifier === mobileInput.joystickTouchId) {
+                mobileInput.joystickTouchId = null;
+                mobileInput.move.x = 0;
+                mobileInput.move.y = 0;
+                knob.style.transform = 'translate(-50%,-50%)';
+            }
+        }
+    };
+    joystick.addEventListener('touchend', resetJoystick, { passive: false });
+    joystick.addEventListener('touchcancel', resetJoystick, { passive: false });
+
+    function updateJoystick(x, y) {
+        const center = mobileInput.joystickCenter;
+        const dx = x - center.x;
+        const dy = y - center.y;
+        const maxRadius = 50;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        const clamped = Math.min(dist, maxRadius);
+        const angle = Math.atan2(dy, dx);
+        const nx = Math.cos(angle) * (clamped / maxRadius);
+        const ny = Math.sin(angle) * (clamped / maxRadius);
+        mobileInput.move.x = nx;
+        mobileInput.move.y = ny;
+        // UI knob 位置
+        knob.style.transform = `translate(calc(-50% + ${nx*maxRadius}px), calc(-50% + ${ny*maxRadius}px))`;
+    }
+
+    // 画面空白处触摸 → 建造放置 OR 视角控制（可选）
+    // 这里用"长按画面=建造放置"的逻辑复用 onMouseClick
+
+    // 攻击按钮
+    btnAttack.addEventListener('touchstart', e => { e.preventDefault(); if (gameState==='playing') attack(); }, { passive: false });
+    // 交互按钮
+    btnInteract.addEventListener('touchstart', e => { e.preventDefault(); if (gameState==='playing') interact(); }, { passive: false });
+    // 建造按钮 - 循环切换类型
+    btnBuild.addEventListener('touchstart', e => {
+        e.preventDefault();
+        if (gameState!=='playing') return;
+        const types = ['torch','lamp','wall','cannon','workshop','tower'];
+        const idx = playerData.currentBuild ? types.indexOf(playerData.currentBuild) : -1;
+        playerData.currentBuild = types[(idx+1) % types.length];
+        showMessage(`建造: ${BUILDINGS[playerData.currentBuild].name}`, 'info');
+        updateBuildUI();
+    }, { passive: false });
+    // 视角按钮 - 切换建造/视角拖拽模式（当前未使用，保留）
+    btnCamera.addEventListener('touchstart', e => { e.preventDefault(); }, { passive: false });
+
+    // 画面点击 → 建造放置（触屏单次 tap）
+    let touchStartPos = null;
+    renderer.domElement.addEventListener('touchstart', e => {
+        if (gameState!=='playing') return;
+        if (mobileInput.joystickTouchId !== null) return; // 摇杆触控忽略
+        touchStartPos = e.changedTouches[0];
+    }, { passive: true });
+
+    renderer.domElement.addEventListener('touchend', e => {
+        if (gameState!=='playing') return;
+        if (!touchStartPos) return;
+        const t = e.changedTouches[0];
+        const dx = t.clientX - touchStartPos.clientX;
+        const dy = t.clientY - touchStartPos.clientY;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        // 如果是 tap（距离小），视为建造点击
+        if (dist < 15) {
+            if (playerData.currentBuild) {
+                handleTouchBuild(t.clientX, t.clientY);
+            }
+        }
+        touchStartPos = null;
+    }, { passive: true });
+
+    // 禁用移动端选择/缩放
+    document.addEventListener('gesturestart', e => e.preventDefault());
+    document.addEventListener('contextmenu', e => e.preventDefault());
+}
+
+function handleTouchBuild(clientX, clientY) {
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2(
+        (clientX / window.innerWidth) * 2 - 1,
+        -(clientY / window.innerHeight) * 2 + 1
+    );
+    raycaster.setFromCamera(mouse, camera);
+    const terrain = scene.getObjectByName('terrain');
+    const intersects = raycaster.intersectObjects(terrain.children);
+    if (intersects.length > 0) tryBuild(playerData.currentBuild, intersects[0].point);
 }
 
 function onResize() {
@@ -1213,10 +1441,14 @@ function updatePlayer(dt) {
     if (playerData.attackCooldown > 0) playerData.attackCooldown -= dt;
 
     let dx = 0, dz = 0;
+    // PC 键盘
     if (keys['KeyW']) dz -= 1;
     if (keys['KeyS']) dz += 1;
     if (keys['KeyA']) dx -= 1;
     if (keys['KeyD']) dx += 1;
+    // 移动端摇杆（摇杆 y 正=向下，对应世界 +z）
+    dx += mobileInput.move.x;
+    dz += mobileInput.move.y;
 
     if (dx !== 0 || dz !== 0) {
         const len = Math.sqrt(dx*dx + dz*dz);
@@ -1596,18 +1828,25 @@ function updateMinimap() {
 
 // =================== 游戏控制 ===================
 function startGame() {
-    document.getElementById('startScreen').addEventListener('click', () => {
+    // 移动端允许 touchstart 也能触发开始
+    const startHandler = () => {
         document.getElementById('startScreen').style.display = 'none';
         gameState = 'playing';
         showMessage('蒸汽时代的黎明尚未到来...', 'tutorial');
-        setTimeout(startTutorial, 1500);
+        if (IS_MOBILE) {
+            setTimeout(() => showMessage('👆 左下摇杆移动 · 右下按钮攻击/交互', 'info'), 500);
+            setTimeout(() => showMessage('👆 画面 tap 放置建筑，🔨 按钮切换建筑类型', 'info'), 2500);
+        }
+        setTimeout(startTutorial, IS_MOBILE ? 3000 : 1500);
 
         document.getElementById('tutorialSkip').addEventListener('click', () => {
             tutorialPhase.active = false;
             document.getElementById('tutorialPanel').classList.add('hidden');
             showMessage('跳过引导，自由游戏！', 'info');
         });
-    });
+    };
+    document.getElementById('startScreen').addEventListener('click', startHandler);
+    document.getElementById('startScreen').addEventListener('touchstart', startHandler, { once: true });
 }
 
 function endGame(result) {
