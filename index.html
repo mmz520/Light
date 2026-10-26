@@ -578,14 +578,16 @@ function init() {
     }
 
     scene.add(new THREE.AmbientLight(0x2a2030, 0.4));
-    const sun = new THREE.DirectionalLight(0xffd4a0, 0.8);
-    sun.position.set(30,50,20);
-    sun.castShadow = !IS_MOBILE;
-    sun.shadow.mapSize.set(1024,1024);
-    sun.shadow.camera.left = -50; sun.shadow.camera.right = 50;
-    sun.shadow.camera.top = 50; sun.shadow.camera.bottom = -50;
-    scene.add(sun);
-    scene.userData.sun = sun;
+    try {
+        const sun = new THREE.DirectionalLight(0xffd4a0, 0.8);
+        sun.position.set(30,50,20);
+        sun.castShadow = !IS_MOBILE;
+        sun.shadow.mapSize.set(1024,1024);
+        sun.shadow.camera.left = -50; sun.shadow.camera.right = 50;
+        sun.shadow.camera.top = 50; sun.shadow.camera.bottom = -50;
+        scene.add(sun);
+        scene.userData.sun = sun;
+    } catch(e) { console.warn('方向光创建失败，禁用昼夜循环', e); }
 
     buildWorld();
     // 对齐玩家出生点到实际可建造格
@@ -1522,14 +1524,16 @@ function animate() {
     }
     gameTime += dt;
 
-    // 昼夜
-    const prog = (gameTime % CFG.DAY_LEN) / CFG.DAY_LEN;
+    // 昼夜（WebGL 降级时 sun 可能不存在）
     const sun = scene.userData.sun;
-    sun.position.x = Math.cos(prog*Math.PI*2)*45;
-    sun.position.y = Math.sin(prog*Math.PI*2)*45;
-    sun.position.z = 20;
-    const night = sun.position.y < 0;
-    sun.intensity = night ? 0.15 : 0.8;
+    if (sun) {
+        const prog = (gameTime % CFG.DAY_LEN) / CFG.DAY_LEN;
+        sun.position.x = Math.cos(prog*Math.PI*2)*45;
+        sun.position.y = Math.sin(prog*Math.PI*2)*45;
+        sun.position.z = 20;
+        const night = sun.position.y < 0;
+        sun.intensity = night ? 0.15 : 0.8;
+    }
 
     // 玩家移动
     if (playerData.attackCd>0) playerData.attackCd-=dt;
@@ -1569,13 +1573,17 @@ function animate() {
         updateLighting();
     }
 
-    playerGroup.position.copy(playerData.pos);
-    playerGroup.position.y += Math.sin(gameTime*5)*.04*moved;
+    if (playerGroup) {
+        playerGroup.position.copy(playerData.pos);
+        playerGroup.position.y += Math.sin(gameTime*5)*.04*moved;
+    }
 
     // 相机跟随
-    const camTarget = new THREE.Vector3(playerData.pos.x, 17, playerData.pos.z + 12);
-    camera.position.lerp(camTarget, 0.04);
-    camera.lookAt(playerData.pos.x, 1, playerData.pos.z);
+    if (camera) {
+        const camTarget = new THREE.Vector3(playerData.pos.x, 17, playerData.pos.z + 12);
+        camera.position.lerp(camTarget, 0.04);
+        camera.lookAt(playerData.pos.x, 1, playerData.pos.z);
+    }
 
     // 建造进度
     for (let i=queue.length-1; i>=0; i--){
