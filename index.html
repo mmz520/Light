@@ -1041,6 +1041,7 @@ function createPlayer() {
     const tex = new THREE.CanvasTexture(sheet);
     tex.magFilter = THREE.NearestFilter;
     tex.minFilter = THREE.NearestFilter;
+    tex.flipY = false; // CanvasTexture 默认 flipY=true 会把精灵表行倒过来，必须关掉！
     tex.repeat.set(1/sheet._sheet.frames, 1/sheet._sheet.dirs);
     tex.offset.set(0, 0);
 
