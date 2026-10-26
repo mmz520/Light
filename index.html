@@ -377,6 +377,7 @@ let scene, camera, renderer, clock;
 let keys = {};
 let gameState = 'start'; // start / opening / playing / victory
 let gameTime = 0;
+let nextSpawnTime;
 let sandboxId = 0;
 let memoryPieces = [];
 
@@ -1742,10 +1743,9 @@ function animate() {
     }
 
     // 系统定时投放（随机间隔）
-    if (!gameTime._nextSpawn) gameTime._nextSpawn = gameTime + CFG.SPAWN_INTERVAL + Math.random()*3;
-    if (gameTime > gameTime._nextSpawn){
+    if (typeof nextSpawnTime === 'undefined' || gameTime > nextSpawnTime){
         rollDrop();
-        gameTime._nextSpawn = gameTime + CFG.SPAWN_INTERVAL + Math.random()*4;
+        nextSpawnTime = gameTime + CFG.SPAWN_INTERVAL + Math.random()*4;
     }
 
     // 玩家状态衰减
