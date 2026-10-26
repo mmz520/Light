@@ -1672,8 +1672,8 @@ function updateInvPanel() {
     for (const [k,v] of items){
         const drop = DROP_TABLE.find(d=>d.item===k);
         const isTool = TOOLS[k];
-        const icon = drop?.icon || isTool?.icon || '📦';
-        const label = drop?.label || isTool?.name || resName(k);
+        const icon = (drop && drop.icon) || (isTool && isTool.icon) || '📦';
+        const label = (drop && drop.label) || (isTool && isTool.name) || resName(k);
 
         const card = document.createElement('div');
         card.className = 'inv-card';
@@ -2245,7 +2245,7 @@ function endGame(result) {
     const stats = document.getElementById('vicStats');
     if (result === 'victory'){
         const days = Math.floor(gameTime / CFG.DAY_LEN) + 1;
-        const built = scene.children.filter(o=>o.userData.build && !o.userData.bm?.destroyed).length;
+        const built = scene.children.filter(o=>o.userData.build && o.userData.bm && !o.userData.bm.destroyed).length;
         stats.innerHTML = `在沙箱 ${sandboxId} 中生存了 ${days} 天<br>建造: ${built} 座设施 | 收集: ${memoryPieces.length} 记忆碎片`;
     } else {
         document.querySelector('#vicScreen .victory-title').textContent = '意识湮灭';
