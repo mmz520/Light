@@ -2,279 +2,251 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0a0603">
-<title>迷雾之地 - 蒸汽朋克生存建造</title>
+<title>生存游戏 | 手眼通天沙箱真人秀</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{overflow:hidden;background:#0a0a0a;font-family:'Courier New',monospace;color:#c9a961}
-canvas{display:block}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0603;font-family:'Courier New',monospace;color:#c9a961;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
+canvas{display:block;touch-action:none}
 
-.hud{position:absolute;pointer-events:none;z-index:10}
-.hud-top{top:10px;left:10px;right:10px;display:flex;justify-content:space-between;pointer-events:none}
+/* ============== 开始界面 ============== */
+.start{position:fixed;inset:0;z-index:100;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:opacity .6s}
+.start.fadeout{opacity:0;pointer-events:none}
+.start-logo{font-size:48px;color:#c9a961;letter-spacing:12px;text-shadow:0 0 30px rgba(201,169,97,.4);margin-bottom:8px;font-weight:bold}
+.start-sub{font-size:12px;color:#5a4a2a;letter-spacing:6px;margin-bottom:40px;text-transform:uppercase}
+.start-num-box{width:200px;height:200px;border:2px solid #8b6914;border-radius:10px;display:flex;align-items:center;justify-content:center;background:rgba(10,6,3,.8);box-shadow:0 0 30px rgba(139,105,20,.4);position:relative;overflow:hidden}
+.start-num{font-size:120px;color:#c9a961;font-weight:bold;text-shadow:0 0 20px rgba(201,169,97,.6),0 0 40px rgba(201,169,97,.3);line-height:1}
+.start-num-label{position:absolute;bottom:8px;font-size:10px;color:#5a4a2a;letter-spacing:4px;text-transform:uppercase}
+.start-story{max-width:500px;text-align:center;font-size:11px;color:#6a5a3a;line-height:1.8;margin-top:40px;padding:0 20px}
+.start-enter{margin-top:30px;font-size:11px;color:#8b6914;letter-spacing:3px;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
 
-.stat-panel{background:linear-gradient(135deg,#2a1f15 0%,#1a1208 100%);border:2px solid #8b6914;border-radius:4px;padding:8px 14px;box-shadow:0 0 12px rgba(139,105,20,.4),inset 0 0 8px rgba(0,0,0,.5);min-width:160px}
-.stat-title{font-size:11px;color:#8b6914;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;border-bottom:1px dashed #8b6914;padding-bottom:3px}
-.stat-bar-container{height:14px;background:#0a0603;border:1px solid #5a4a2a;margin:3px 0;position:relative;overflow:hidden}
-.stat-bar{height:100%;transition:width .3s ease;position:relative}
-.health-bar{background:linear-gradient(90deg,#8b1a1a,#c94a4a)}
-.hunger-bar{background:linear-gradient(90deg,#5a3a1a,#c99a4a)}
-.sanity-bar{background:linear-gradient(90deg,#2a4a6a,#4a8aca)}
-.stat-text{font-size:10px;color:#c9a961;position:absolute;right:5px;top:50%;transform:translateY(-50%);text-shadow:1px 1px 0 #000}
+/* ============== 睁眼特效 ============== */
+.eye-overlay{position:fixed;inset:0;z-index:95;background:#000;pointer-events:none;transition:none}
+.eye-overlay .eye-top,.eye-overlay .eye-bottom{position:absolute;left:0;right:0;height:50%;background:#000;transition:transform 1.2s cubic-bezier(.7,0,.3,1)}
+.eye-overlay .eye-top{top:0;transform-origin:top}
+.eye-overlay .eye-bottom{bottom:0;transform-origin:bottom}
+.eye-overlay.blink .eye-top{transform:scaleY(0)}
+.eye-overlay.blink .eye-bottom{transform:scaleY(0)}
+.eye-overlay.open .eye-top{transform:scaleY(-.02)}
+.eye-overlay.open .eye-bottom{transform:scaleY(.02)}
 
-.resources{display:flex;gap:12px;flex-wrap:wrap;max-width:400px}
-.resource-item{background:linear-gradient(135deg,#2a1f15,#1a1208);border:1px solid #8b6914;padding:4px 8px;font-size:11px;color:#c9a961;box-shadow:inset 0 0 5px rgba(0,0,0,.5)}
-.resource-item.low{border-color:#c94a4a;animation:pulseLow 1s infinite}
-@keyframes pulseLow{0%,100%{border-color:#c94a4a}50%{border-color:#ff6666}}
+/* 眩晕白闪 */
+.daze-flash{position:fixed;inset:0;z-index:96;background:#fff;pointer-events:none;opacity:0;transition:opacity 1.5s}
 
-.build-menu{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#2a1f15,#1a1208);border:3px solid #8b6914;border-radius:6px;padding:10px;box-shadow:0 0 20px rgba(139,105,20,.5);pointer-events:auto;display:flex;gap:8px}
-.build-item{width:72px;height:82px;background:linear-gradient(135deg,#3a2f1f,#2a1f15);border:2px solid #8b6914;border-radius:4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:all .2s;position:relative}
-.build-item:hover{border-color:#c9a961;box-shadow:0 0 15px rgba(201,169,97,.6);transform:translateY(-3px)}
-.build-item.selected{border-color:#ffd700;box-shadow:0 0 20px rgba(255,215,0,.8);background:linear-gradient(135deg,#4a3f2f,#3a2f1f)}
-.build-item.disabled{opacity:.4;cursor:not-allowed}
-.build-item.locked{opacity:.3;cursor:not-allowed;filter:grayscale(1)}
-.build-item.locked::after{content:'🔒';position:absolute;top:2px;right:4px;font-size:12px}
-.build-item.required{border-color:#ff8800;box-shadow:0 0 12px rgba(255,136,0,.6);animation:reqPulse 1.5s infinite}
-@keyframes reqPulse{0%,100%{box-shadow:0 0 12px rgba(255,136,0,.6)}50%{box-shadow:0 0 20px rgba(255,136,0,1)}}
-.build-icon{font-size:24px;margin-bottom:3px}
-.build-name{font-size:9px;color:#c9a961;text-align:center;text-transform:uppercase;letter-spacing:1px}
-.build-cost{font-size:8px;color:#8b6914;margin-top:1px;line-height:1.2}
+/* ============== 胜利界面 ============== */
+.victory-screen{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.95);display:none;flex-direction:column;align-items:center;justify-content:center}
+.victory-screen.show{display:flex;animation:fadein 1s}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+.victory-title{font-size:42px;color:#c9a961;text-shadow:0 0 30px rgba(201,169,97,.6);letter-spacing:8px;margin-bottom:20px}
+.victory-text{max-width:500px;text-align:center;color:#8b6914;font-size:12px;line-height:2.2;margin-bottom:30px;padding:0 20px}
+.victory-stats{color:#c9a961;font-size:12px;margin-bottom:30px;text-align:center;line-height:1.8}
+.end-btn{background:linear-gradient(135deg,#5a3a14,#8b6914);border:2px solid #c9a961;color:#1a1208;padding:10px 30px;font-family:inherit;font-size:12px;cursor:pointer;letter-spacing:3px;text-transform:uppercase;font-weight:bold;border-radius:3px}
+.end-btn:hover{box-shadow:0 0 20px rgba(201,169,97,.6)}
 
-.minimap{position:absolute;top:10px;right:10px;width:160px;height:160px;background:rgba(10,6,3,.9);border:2px solid #8b6914;border-radius:4px;box-shadow:0 0 15px rgba(0,0,0,.8)}
+/* ============== HUD ============== */
+.hud-status{position:fixed;top:10px;right:10px;z-index:10;display:flex;flex-direction:column;gap:6px;width:180px;pointer-events:none}
+.hud-status .stat{background:linear-gradient(135deg,#1e1610,#120a06);border:1px solid #5a4a2a;padding:4px 8px;box-shadow:inset 0 0 8px rgba(0,0,0,.6)}
+.hud-status .stat-row{display:flex;align-items:center;gap:6px;font-size:10px;color:#8b6914;text-transform:uppercase;letter-spacing:2px}
+.hud-status .stat-icon{font-size:14px}
+.hud-status .stat-bar-wrap{flex:1;height:10px;background:#0a0603;border:1px solid #3a2a1a;margin-top:3px;overflow:hidden;position:relative}
+.hud-status .stat-bar{height:100%;transition:width .3s}
+.hud-status .stat-text{position:absolute;right:4px;top:50%;transform:translateY(-50%);font-size:8px;color:#c9a961;text-shadow:1px 1px 0 #000}
+.hud-status .hp{background:linear-gradient(90deg,#8b1a1a,#c94a4a)}
+.hud-status .food{background:linear-gradient(90deg,#5a3a1a,#c99a4a)}
+.hud-status .sanity{background:linear-gradient(90deg,#2a3a6a,#4a7aca)}
+
+.hud-meta{position:fixed;top:10px;left:10px;z-index:10;display:flex;flex-direction:column;gap:4px;pointer-events:none}
+.hud-meta .sandbox{background:rgba(10,6,3,.8);border:1px solid #8b6914;padding:5px 12px;font-size:11px;color:#c9a961;letter-spacing:2px}
+.hud-meta .sandbox b{color:#ffdd66}
+.hud-meta .mem-fragments{background:rgba(10,6,3,.8);border:1px dashed #8b6914;padding:4px 10px;font-size:10px;color:#8b6914}
+.hud-meta .mem-fragments b{color:#c9a961}
+
+/* 小地图 */
+.minimap{position:fixed;top:110px;left:10px;width:140px;height:140px;background:rgba(10,6,3,.9);border:1px solid #8b6914;z-index:10;pointer-events:none}
 .minimap canvas{width:100%;height:100%}
 
-.interact-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(42,31,21,.95);border:2px solid #8b6914;padding:10px 20px;color:#c9a961;font-size:13px;text-align:center;pointer-events:none;box-shadow:0 0 15px rgba(139,105,20,.5)}
+/* 消息日志 */
+.msg-log{position:fixed;left:160px;bottom:240px;width:260px;max-height:140px;overflow:hidden;z-index:10;pointer-events:none}
+.msg{background:rgba(10,6,3,.85);border-left:2px solid #8b6914;padding:4px 8px;margin-bottom:3px;font-size:10px;color:#c9a961;animation:msgIn .3s}
+.msg.warn{border-left-color:#c94a4a;color:#c94a4a}
+.msg.mem{border-left-color:#a855f7;color:#d8b4fe}
+.msg.success{border-left-color:#4ac94a;color:#4ac94a}
+@keyframes msgIn{from{opacity:0;transform:translateX(-10px)}to{opacity:1;transform:none}}
 
-.message-log{position:absolute;left:10px;bottom:130px;width:320px;max-height:180px;overflow:hidden;pointer-events:none}
-.message{background:rgba(26,18,8,.9);border-left:3px solid #8b6914;padding:5px 10px;margin:3px 0;font-size:11px;color:#c9a961;animation:fadeIn .3s ease}
-.message.danger{border-left-color:#c94a4a;color:#c94a4a}
-.message.success{border-left-color:#4ac94a;color:#4ac94a}
-.message.info{border-left-color:#4a8aca;color:#4a8aca}
-.message.tutorial{border-left-color:#ff8800;color:#ffaa44;font-weight:bold}
-@keyframes fadeIn{from{opacity:0;transform:translateX(-20px)}to{opacity:1;transform:translateX(0)}}
+/* 拾取提示 */
+.pickup-flash{position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);background:rgba(10,6,3,.9);border:1px solid #ffdd66;padding:10px 20px;color:#ffdd66;font-size:12px;z-index:20;pointer-events:none;animation:pickupShow 2.5s forwards;text-align:center}
+@keyframes pickupShow{0%{opacity:0;transform:translate(-50%,-40%)}20%{opacity:1;transform:translate(-50%,-50%)}80%{opacity:1;transform:translate(-50%,-50%)}100%{opacity:0;transform:translate(-50%,-60%)}}
 
-.progress-bar{position:absolute;bottom:190px;left:50%;transform:translateX(-50%);width:200px;pointer-events:none}
-.progress-label{font-size:11px;color:#c9a961;text-align:center;margin-bottom:3px;text-transform:uppercase;letter-spacing:2px}
-.progress-fill{height:16px;background:#0a0603;border:2px solid #8b6914;position:relative}
-.progress-bar-inner{height:100%;background:linear-gradient(90deg,#8b6914,#c9a961);transition:width .1s linear}
-.progress-text{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:10px;color:#0a0603;font-weight:bold;text-shadow:none}
+/* ============== 底部建造/背包 ============== */
+.bottom-bar{position:fixed;bottom:0;left:0;right:0;z-index:10;background:linear-gradient(180deg,rgba(10,6,3,0),rgba(10,6,3,.95) 30%);padding:8px 10px 14px;pointer-events:none}
+.bottom-bar .inner{pointer-events:auto;max-width:900px;margin:0 auto}
 
-/* ============ 引导面板 ============ */
-.tutorial-panel{position:absolute;top:50%;left:20px;transform:translateY(-50%);width:320px;background:linear-gradient(135deg,#2a1f15,#1a1208);border:3px solid #ff8800;border-radius:6px;padding:14px;box-shadow:0 0 25px rgba(255,136,0,.5);z-index:20;pointer-events:auto}
-.tutorial-panel.hidden{display:none}
-.tutorial-step-num{font-size:10px;color:#ffaa44;letter-spacing:3px;text-transform:uppercase;margin-bottom:4px}
-.tutorial-title{font-size:16px;color:#ffdd88;margin-bottom:8px;text-shadow:1px 1px 0 #000;font-weight:bold}
-.tutorial-desc{font-size:12px;color:#c9a961;line-height:1.6;margin-bottom:12px}
-.tutorial-objective{background:rgba(10,6,3,.6);border:1px solid #8b6914;padding:8px;margin-bottom:10px}
-.tutorial-obj-text{font-size:11px;color:#c9a961;margin-bottom:5px}
-.tutorial-obj-items{font-size:10px;color:#8b6914}
-.tutorial-obj-items span{display:block;margin:2px 0}
-.tutorial-obj-items span.done{color:#4ac94a;text-decoration:line-through}
-.tutorial-obj-items span.active{color:#ffaa44}
-.tutorial-skip{background:linear-gradient(135deg,#5a3a14,#8b6914);border:1px solid #c9a961;color:#1a1208;padding:4px 12px;font-size:10px;font-family:'Courier New',monospace;cursor:pointer;letter-spacing:2px;text-transform:uppercase;float:right}
-.tutorial-skip:hover{box-shadow:0 0 10px rgba(201,169,97,.6)}
+/* Tab */
+.tab-row{display:flex;gap:0;margin-bottom:8px;justify-content:center}
+.tab{padding:5px 16px;background:#1a1208;border:1px solid #5a4a2a;border-bottom:none;color:#5a4a2a;font-size:10px;letter-spacing:2px;text-transform:uppercase;cursor:pointer;font-family:inherit}
+.tab.active{background:#2a1f15;color:#c9a961;border-color:#8b6914}
+.tab:hover{color:#c9a961}
 
-/* ============ 行动提示框 ============ */
-.action-hint{position:absolute;top:50%;right:20px;transform:translateY(-50%);background:rgba(42,31,21,.95);border:2px solid #ffaa44;border-radius:4px;padding:12px;max-width:280px;pointer-events:none;z-index:15;box-shadow:0 0 15px rgba(255,170,68,.4);animation:slideIn .5s ease}
-@keyframes slideIn{from{opacity:0;transform:translateY(-50%) translateX(30px)}to{opacity:1;transform:translateY(-50%) translateX(0)}}
-.action-hint .hint-title{font-size:12px;color:#ffaa44;text-transform:uppercase;letter-spacing:2px;margin-bottom:6px}
-.action-hint .hint-body{font-size:11px;color:#c9a961;line-height:1.5}
-.action-hint.danger{border-color:#c94a4a;box-shadow:0 0 15px rgba(201,74,74,.4)}
-.action-hint.danger .hint-title{color:#c94a4a}
-.action-hint.success{border-color:#4ac94a;box-shadow:0 0 15px rgba(74,201,74,.4)}
-.action-hint.success .hint-title{color:#4ac94a}
+/* Panels */
+.panel-row{display:flex;gap:10px}
+.panel{flex:1;background:#1a1208;border:1px solid #5a4a2a;padding:10px;display:none}
+.panel.active{display:block}
 
-/* ============ 资源分配面板 ============ */
-.resource-flow{position:absolute;top:280px;right:10px;background:linear-gradient(135deg,#2a1f15,#1a1208);border:2px solid #8b6914;padding:10px;width:200px;font-size:10px;z-index:10;pointer-events:auto;display:none}
-.resource-flow h4{font-size:11px;color:#8b6914;text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;text-align:center}
-.resource-flow .row{display:flex;justify-content:space-between;margin:3px 0;color:#c9a961}
-.resource-flow .row.need{color:#ff6644}
-.resource-flow .row.have{color:#4ac94a}
-.resource-flow .sep{border-top:1px dashed #5a4a2a;margin:6px 0}
-.resource-flow button{width:100%;margin-top:8px;background:linear-gradient(135deg,#8b6914,#c9a961);border:none;color:#1a1208;padding:5px;font-family:inherit;font-size:10px;cursor:pointer;font-weight:bold;letter-spacing:1px}
+/* 建造 tab */
+.build-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:6px}
+.build-card{background:#221a12;border:1px solid #5a4a2a;padding:6px;cursor:pointer;transition:all .15s;text-align:center;border-radius:2px}
+.build-card:hover{border-color:#c9a961;box-shadow:0 0 10px rgba(201,169,97,.3);transform:translateY(-2px)}
+.build-card.selected{border-color:#ffd700;background:#2a2014;box-shadow:0 0 15px rgba(255,215,0,.4)}
+.build-card.disabled{opacity:.45;cursor:not-allowed}
+.build-icon{font-size:22px;margin-bottom:2px}
+.build-name{font-size:9px;color:#c9a961;text-transform:uppercase;letter-spacing:1px}
+.build-cost{font-size:8px;color:#8b6914;margin-top:2px;line-height:1.3}
 
-/* ============ 开始界面 ============ */
-.start-screen{position:absolute;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse at center,#1a1208 0%,#0a0603 80%);z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer}
-.game-title{font-size:56px;color:#c9a961;text-shadow:0 0 30px rgba(201,169,97,.6),2px 2px 0 #000;letter-spacing:8px;margin-bottom:10px;font-weight:bold}
-.game-subtitle{font-size:14px;color:#8b6914;letter-spacing:10px;margin-bottom:40px;text-transform:uppercase}
-.start-hint{font-size:14px;color:#c9a961;animation:pulse 2s infinite}
-@keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
+/* 背包 tab */
+.inv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:6px}
+.inv-card{background:#221a12;border:1px solid #5a4a2a;padding:6px;cursor:pointer;display:flex;align-items:center;gap:6px;border-radius:2px;transition:all .15s;position:relative}
+.inv-card:hover{border-color:#c9a961;box-shadow:0 0 10px rgba(201,169,97,.3)}
+.inv-icon{font-size:18px}
+.inv-info{flex:1;min-width:0}
+.inv-name{font-size:9px;color:#c9a961;text-transform:uppercase;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.inv-count{font-size:11px;color:#ffdd66;font-weight:bold}
+.inv-btn{font-size:8px;background:#3a2f1f;border:1px solid #5a4a2a;color:#c9a961;padding:2px 4px;cursor:pointer;font-family:inherit;letter-spacing:1px;text-transform:uppercase;margin-top:2px}
+.inv-btn:hover{border-color:#c9a961}
 
-/* ============ 胜利/失败 ============ */
-.end-screen{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(10,6,3,.95);z-index:100;display:none;flex-direction:column;align-items:center;justify-content:center}
-.end-title{font-size:48px;margin-bottom:20px;letter-spacing:6px}
-.end-title.victory{color:#c9a961;text-shadow:0 0 40px rgba(201,169,97,.8)}
-.end-title.defeat{color:#c94a4a;text-shadow:0 0 40px rgba(201,74,74,.8)}
-.end-stats{color:#c9a961;font-size:14px;line-height:2;margin-bottom:30px;text-align:center}
-.restart-btn{background:linear-gradient(135deg,#8b6914,#c9a961);border:2px solid #c9a961;color:#1a1208;padding:12px 40px;font-size:16px;font-family:'Courier New',monospace;cursor:pointer;letter-spacing:3px;text-transform:uppercase;font-weight:bold}
-.restart-btn:hover{box-shadow:0 0 30px rgba(201,169,97,.8)}
+.inv-hint{font-size:9px;color:#8b6914;margin-top:8px;text-align:center;letter-spacing:1px}
 
-.damage-number{position:absolute;color:#ff4444;font-size:16px;font-weight:bold;pointer-events:none;text-shadow:1px 1px 0 #000;animation:floatUp 1s forwards}
-@keyframes floatUp{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-50px)}}
+/* 引导提示 */
+.mem-intro{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);max-width:420px;background:rgba(10,6,3,.95);border:1px solid #8b6914;padding:20px;color:#c9a961;font-size:11px;line-height:2;z-index:15;text-align:center;box-shadow:0 0 30px rgba(139,105,20,.4)}
+.mem-intro h3{font-size:14px;color:#ffdd66;margin-bottom:10px;letter-spacing:3px}
+.mem-intro .key{color:#a855f7;font-weight:bold}
 
-/* ============ 建造预览光束 ============ */
-.build-range-indicator{position:absolute;pointer-events:none;border:2px dashed #ff8800;border-radius:50%;animation:rangePulse 1s infinite}
-@keyframes rangePulse{0%,100%{opacity:.4}50%{opacity:.8}}
+/* ============== 移动端虚拟摇杆 ============== */
+.joystick{position:fixed;left:16px;bottom:16px;width:120px;height:120px;border-radius:50%;background:rgba(42,31,21,.35);border:2px solid #8b6914;z-index:15;display:none;touch-action:none}
+.joystick.active{display:block}
+.joystick .knob{position:absolute;width:52px;height:52px;border-radius:50%;background:radial-gradient(circle,#c9a961,#8b6914);top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;box-shadow:0 0 10px rgba(201,169,97,.5)}
+.mob-btns{position:fixed;right:16px;bottom:120px;display:none;flex-direction:column;gap:10px;z-index:15}
+.mob-btns.active{display:flex}
+.mob-btn{width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#2a1f15,#1a1208);border:2px solid #8b6914;color:#c9a961;font-size:18px;display:flex;align-items:center;justify-content:center;touch-action:none;box-shadow:0 0 10px rgba(0,0,0,.6)}
+.mob-btn:active{background:#3a2f1f;border-color:#ffd700;transform:scale(.95)}
 
-.victory-bar{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(10,6,3,.9);border:2px solid #c9a961;padding:6px 20px;font-size:12px;color:#c9a961;text-transform:uppercase;letter-spacing:2px;z-index:10}
-.victory-bar span{color:#ffdd66;font-weight:bold}
+.mob-build-hint{position:fixed;right:16px;bottom:78px;font-size:9px;color:#c9a961;background:rgba(10,6,3,.8);padding:4px 8px;border:1px solid #8b6914;display:none;z-index:15;pointer-events:none;max-width:140px;text-align:center}
+.mob-build-hint.active{display:block}
 
-/* ============ 移动端虚拟摇杆 ============ */
-.virtual-joystick{position:absolute;left:20px;bottom:20px;width:140px;height:140px;border-radius:50%;background:rgba(42,31,21,.4);border:2px solid #8b6914;z-index:30;display:none;touch-action:none;box-shadow:0 0 20px rgba(0,0,0,.6)}
-.virtual-joystick.active{display:block}
-.joystick-knob{position:absolute;width:60px;height:60px;border-radius:50%;background:radial-gradient(circle,#c9a961 0%,#8b6914 100%);top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;box-shadow:0 0 10px rgba(201,169,97,.5)}
-
-/* ============ 移动端触屏按键 ============ */
-.mobile-buttons{position:absolute;right:15px;bottom:15px;display:none;flex-direction:column;gap:12px;z-index:30}
-.mobile-buttons.active{display:flex}
-.mbtn{width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#3a2f1f,#2a1f15);border:2px solid #8b6914;color:#c9a961;font-size:20px;display:flex;align-items:center;justify-content:center;touch-action:none;box-shadow:0 0 10px rgba(0,0,0,.6);user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
-.mbtn:active{background:linear-gradient(135deg,#5a4f2f,#4a3f1f);border-color:#ffd700;box-shadow:0 0 15px rgba(255,215,0,.7)}
-.mbtn-label{position:absolute;font-size:9px;color:#8b6914;bottom:-14px;left:50%;transform:translateX(-50%);text-transform:uppercase;letter-spacing:1px}
-.mbtn-row{display:flex;gap:12px;justify-content:flex-end}
-.mbtn-small{width:48px;height:48px;font-size:16px}
-
-/* ============ 响应式 / 移动端 ============ */
 @media (max-width: 768px) {
-    .game-title{font-size:36px;letter-spacing:4px}
-    .game-subtitle{font-size:12px;letter-spacing:6px;margin-bottom:30px}
-
-    .hud-top{flex-wrap:wrap;gap:8px}
-    .stat-panel{padding:5px 10px;min-width:0;font-size:10px}
-    .stat-title{font-size:9px;margin-bottom:3px}
-    .stat-bar-container{height:10px;margin:2px 0}
-    .stat-text{font-size:8px}
-
-    .resources{gap:6px;max-width:100%;font-size:10px}
-    .resource-item{padding:2px 5px;font-size:9px}
-    .resource-icon{width:10px;height:10px;margin-right:2px}
-
-    .minimap{width:110px;height:110px;top:auto;bottom:150px;right:10px}
-
-    .build-menu{bottom:auto;top:50%;left:50%;transform:translate(-50%,-20%);flex-wrap:wrap;justify-content:center;gap:5px;padding:6px;max-width:92vw}
-    .build-item{width:54px;height:60px}
-    .build-icon{font-size:18px}
-    .build-name{font-size:8px}
-    .build-cost{display:none}
-
-    .tutorial-panel{top:10px;left:10px;right:10px;transform:none;width:auto;max-height:40vh;overflow-y:auto;padding:10px}
-    .tutorial-title{font-size:14px}
-    .tutorial-desc{font-size:11px;line-height:1.5}
-
-    .action-hint{top:auto;bottom:280px;right:10px;left:10px;transform:none;max-width:none}
-
-    .message-log{left:10px;bottom:260px;width:45vw;max-height:120px}
-    .message{font-size:10px;padding:3px 6px;margin:2px 0}
-
-    .progress-bar{bottom:200px;width:160px}
-
-    .victory-bar{font-size:10px;padding:4px 10px;letter-spacing:1px}
-
-    .interact-hint{font-size:11px;padding:8px 14px}
-
-    /* 移动端隐藏桌面提示 */
-    body.is-mobile .hint{display:none}
+    .hud-status{width:140px;font-size:9px}
+    .hud-status .stat-icon{font-size:12px}
+    .minimap{width:100px;height:100px;top:110px}
+    .msg-log{left:110px;width:45vw;max-height:100px;bottom:240px}
+    .start-logo{font-size:28px;letter-spacing:6px}
+    .start-num-box{width:140px;height:140px}
+    .start-num{font-size:80px}
+    .build-grid{grid-template-columns:repeat(4,1fr)}
+    .inv-grid{grid-template-columns:repeat(3,1fr)}
+    .panel{padding:6px}
+    .inv-hint{display:none}
+    .bottom-bar{padding-bottom:60px}
 }
 
-/* 安全区域（iPhone 刘海/底部横条） */
-@supports (padding: max(0px)) {
-    .virtual-joystick{left: max(20px, env(safe-area-inset-left)); bottom: max(20px, env(safe-area-inset-bottom))}
-    .mobile-buttons{right: max(15px, env(safe-area-inset-right)); bottom: max(15px, env(safe-area-inset-bottom))}
+@supports (padding:max(0px)){
+    .joystick{left:max(16px,env(safe-area-inset-left));bottom:max(16px,calc(env(safe-area-inset-bottom)+60px))}
+    .mob-btns{right:max(16px,env(safe-area-inset-right));bottom:max(120px,calc(env(safe-area-inset-bottom)+100px))}
+    .bottom-bar{padding-bottom:max(14px,env(safe-area-inset-bottom))}
 }
 </style>
 </head>
 <body>
 
-<div class="start-screen" id="startScreen">
-    <div class="game-title">迷雾之地</div>
-    <div class="game-subtitle">Foggy Dominion</div>
-    <div style="color:#8b6914;font-size:12px;text-align:center;max-width:550px;line-height:2;margin-bottom:30px">
-        永恒迷雾笼罩的蒸汽朋克废墟大陆。你是最后的工程师。<br>
-        采集、建造、防御 —— 夺回属于人类的光明。
+<!-- ============ 开始 ============ -->
+<div class="start" id="startScreen">
+    <div class="start-logo">生存游戏</div>
+    <div class="start-sub">SANDBOX REALITY SHOW</div>
+    <div class="start-num-box">
+        <div class="start-num" id="sandboxNum">—</div>
+        <div class="start-num-label">沙箱编号</div>
     </div>
-    <div class="start-hint">点击任意位置开始</div>
-    <div style="position:absolute;bottom:30px;color:#5a4a2a;font-size:11px;letter-spacing:2px">
-        WASD 移动 | 鼠标左键 建造 | E 交互 | 空格 攻击
+    <div class="start-story">
+        「你是手眼通天科技有限公司旗下真人秀<br>「生存游戏」第 <span id="showNum" style="color:#c9a961">—</span> 场的参与者。」<br><br>
+        「活动全程直播。你的记忆被暂时封存，<br>脑海中只保留最基础的生存常识。」<br><br>
+        「规则很简单：活着，或者，死。」<br><br>
+        「——工作人员失误遗失的碎片，或许能带你找到出口。」
+    </div>
+    <div class="start-enter" id="startEnter">点击 / 触屏 进入</div>
+</div>
+
+<!-- ============ 睁眼特效 ============ -->
+<div class="eye-overlay" id="eyeOverlay"><div class="eye-top"></div><div class="eye-bottom"></div></div>
+<div class="daze-flash" id="dazeFlash"></div>
+
+<!-- ============ HUD ============ -->
+<div class="hud-status">
+    <div class="stat">
+        <div class="stat-row"><span class="stat-icon">❤</span>生命值</div>
+        <div class="stat-bar-wrap"><div class="stat-bar hp" id="hpBar" style="width:100%"></div><span class="stat-text" id="hpTxt">100</span></div>
+    </div>
+    <div class="stat">
+        <div class="stat-row"><span class="stat-icon">🍖</span>饱腹度</div>
+        <div class="stat-bar-wrap"><div class="stat-bar food" id="foodBar" style="width:100%"></div><span class="stat-text" id="foodTxt">100</span></div>
+    </div>
+    <div class="stat">
+        <div class="stat-row"><span class="stat-icon">🧠</span>精神状况</div>
+        <div class="stat-bar-wrap"><div class="stat-bar sanity" id="sanBar" style="width:100%"></div><span class="stat-text" id="sanTxt">100</span></div>
     </div>
 </div>
 
-<!-- HUD 顶部 -->
-<div class="hud hud-top">
-    <div class="stat-panel" style="position:relative">
-        <div class="stat-title">工程师状态</div>
-        <div style="position:relative">
-            <div class="stat-bar-container"><div class="stat-bar health-bar" id="healthBar" style="width:100%"></div><span class="stat-text" id="healthText">100</span></div>
-            <div class="stat-bar-container"><div class="stat-bar hunger-bar" id="hungerBar" style="width:100%"></div><span class="stat-text" id="hungerText">100</span></div>
-            <div class="stat-bar-container"><div class="stat-bar sanity-bar" id="sanityBar" style="width:100%"></div><span class="stat-text" id="sanityText">100</span></div>
+<div class="hud-meta">
+    <div class="sandbox">沙箱 <b id="sandboxHud">—</b></div>
+    <div class="mem-fragments">记忆碎片 <b id="memCount">0 / 5</b></div>
+</div>
+
+<canvas class="minimap" id="minimap" width="140" height="140"></canvas>
+<div class="msg-log" id="msgLog"></div>
+
+<!-- ============ 底部 ============ -->
+<div class="bottom-bar">
+    <div class="inner">
+        <div class="tab-row">
+            <div class="tab active" data-tab="tools">🛠 工具</div>
+            <div class="tab" data-tab="build">🏚 建筑</div>
+            <div class="tab" data-tab="inv">🎒 背包</div>
+        </div>
+        <div class="panel active" data-panel="tools">
+            <div class="build-grid" id="toolsGrid"></div>
+        </div>
+        <div class="panel" data-panel="build">
+            <div class="build-grid" id="buildGrid"></div>
+        </div>
+        <div class="panel" data-panel="inv">
+            <div class="inv-grid" id="invGrid"></div>
+            <div class="inv-hint">点击物品使用</div>
         </div>
     </div>
+</div>
 
-    <div class="resources" id="resourcePanel"></div>
+<!-- 移动端 -->
+<div class="joystick" id="joystick"><div class="knob"></div></div>
+<div class="mob-btns" id="mobBtns">
+    <div class="mob-btn" id="btnAttack">⚔</div>
+    <div class="mob-btn" id="btnPlace">📍</div>
+</div>
+<div class="mob-build-hint" id="mobHint"></div>
 
-    <div class="stat-panel" style="text-align:center;min-width:100px">
-        <div class="stat-title">时刻</div>
-        <div style="font-size:20px;color:#c9a961;font-weight:bold" id="dayCount">第1天</div>
-        <div style="font-size:10px;color:#8b6914;margin-top:2px" id="dayPhase">白昼</div>
+<!-- 胜利 -->
+<div class="victory-screen" id="vicScreen">
+    <div class="victory-title">出口在脑海中显现</div>
+    <div class="victory-text">
+        记忆的碎片被你一片一片拾起，<br>
+        画面开始重新连接成完整的过去——<br><br>
+        你记起了自己是谁，为什么会在这里。<br>
+        沙箱的边界裂开一道缝，<br>
+        外面，是真实的世界。<br><br>
+        工作人员的声音在广播里响起：<br>
+        「恭喜，你找到了出口。」
     </div>
-</div>
-
-<div class="victory-bar">黎明进度 <span id="lightPercent">0%</span></div>
-
-<div class="minimap"><canvas id="minimapCanvas" width="160" height="160"></canvas></div>
-
-<div class="message-log" id="messageLog"></div>
-
-<div class="interact-hint" id="interactHint" style="display:none"></div>
-
-<div class="progress-bar" id="progressBar" style="display:none">
-    <div class="progress-label" id="progressLabel">建造中...</div>
-    <div class="progress-fill"><div class="progress-bar-inner" id="progressInner" style="width:0%"></div><span class="progress-text" id="progressText">0%</span></div>
-</div>
-
-<!-- 引导面板 -->
-<div class="tutorial-panel hidden" id="tutorialPanel">
-    <button class="tutorial-skip" id="tutorialSkip">跳过</button>
-    <div class="tutorial-step-num" id="tutorialStepNum">阶段 1/7</div>
-    <div class="tutorial-title" id="tutorialTitle">采集资源</div>
-    <div class="tutorial-desc" id="tutorialDesc"></div>
-    <div class="tutorial-objective">
-        <div class="tutorial-obj-text">目标：</div>
-        <div class="tutorial-obj-items" id="tutorialObjectives"></div>
-    </div>
-</div>
-
-<!-- 行动提示 -->
-<div class="action-hint" id="actionHint" style="display:none">
-    <div class="hint-title" id="actionHintTitle">提示</div>
-    <div class="hint-body" id="actionHintBody"></div>
-</div>
-
-<!-- 建造菜单 -->
-<div class="build-menu" id="buildMenu"></div>
-
-<div class="end-screen" id="endScreen">
-    <div class="end-title" id="endTitle">黎明降临</div>
-    <div class="end-stats" id="endStats"></div>
-    <button class="restart-btn" onclick="location.reload()">重新开始</button>
-</div>
-
-<!-- ============ 移动端虚拟摇杆 ============ -->
-<div class="virtual-joystick" id="joystick">
-    <div class="joystick-knob" id="joystickKnob"></div>
-</div>
-
-<!-- ============ 移动端触屏按键 ============ -->
-<div class="mobile-buttons" id="mobileButtons">
-    <div class="mbtn-row" style="gap:10px">
-        <div class="mbtn mbtn-small" id="btnCamera" style="position:relative">📷<span class="mbtn-label">视角</span></div>
-        <div class="mbtn" id="btnAttack" style="position:relative">⚔️<span class="mbtn-label">攻击</span></div>
-    </div>
-    <div class="mbtn-row" style="gap:10px">
-        <div class="mbtn" id="btnInteract" style="position:relative">✋<span class="mbtn-label">交互</span></div>
-        <div class="mbtn" id="btnBuild" style="position:relative">🔨<span class="mbtn-label">建造</span></div>
-    </div>
+    <div class="victory-stats" id="vicStats"></div>
+    <button class="end-btn" onclick="location.reload()">重启记忆</button>
 </div>
 
 <script type="importmap">
@@ -284,916 +256,659 @@ canvas{display:block}
 <script type="module">
 import * as THREE from 'three';
 
-// =================== 游戏配置 ===================
-const CONFIG = {
-    MAP_SIZE: 50,
-    CELL_SIZE: 2,
-    FOG_REVEAL_RADIUS: 6,
+// ================== 配置 ==================
+const CFG = {
+    MAP: 50, CELL: 2,
+    DAY_LEN: 150,
     PLAYER_SPEED: 6,
-    DAY_LENGTH: 150,
-    THREAT_SPAWN_INTERVAL: 10,
-    THREAT_SPAWN_CHANCE: 0.6,
-    WIN_LIGHT_PERCENT: 0.65,
-    HUNGER_RATE: 0.35,
-    SANITY_RATE_DARK: 0.25,
-    SANITY_RATE_LIGHT: 0.05,
-    HEALTH_DAMAGE_RATE: 0.6,
-    DAY_THREAT_DELAY: 30, // 开局30秒内不刷怪
-    INITIAL_DEPOSIT_RADIUS: 10 // 初始资源投放半径
+    SPAWN_INTERVAL: 7,
+    SPAWN_RADIUS: 14,
+    AUTO_PICKUP_RANGE: 5,
+    BUILD_EXCLUDE_RADIUS: 5,
+    FRAGMENT_SPAWN_CHANCE: 0.04,
+    VICTORY_FRAGMENTS: 5
 };
 
-const BUILDINGS = {
-    torch:    { name:'火把',   icon:'🔦', cost:{wood:2},                   lightRadius:6,  buildTime:2, hp:30,  blocksPath:false },
-    lamp:     { name:'蒸汽灯', icon:'🏮', cost:{metal:3,coal:2},            lightRadius:10, buildTime:3, hp:50,  blocksPath:false },
-    wall:     { name:'石墙',   icon:'🧱', cost:{stone:4,metal:2},           lightRadius:0,  buildTime:2, hp:150, blocksPath:true },
-    cannon:   { name:'蒸汽炮台', icon:'💣', cost:{metal:8,stone:5,coal:3},    lightRadius:0,  buildTime:5, hp:120, blocksPath:false, damage:25, attackRange:14, attackSpeed:1.5 },
-    workshop: { name:'工坊',   icon:'⚙️', cost:{wood:12,metal:8},           lightRadius:4,  buildTime:8, hp:100, blocksPath:false, gatherSpeed:2 },
-    tower:    { name:'照明塔', icon:'🗼', cost:{wood:10,metal:8,stone:5},    lightRadius:18, buildTime:8, hp:200, blocksPath:false }
+// 稀有度
+const RARITY = {
+    common:   { color:0x888888, name:'常见', weight:45 },
+    uncommon: { color:0x4ac94a, name:'少见', weight:30 },
+    rare:     { color:0x4a8aca, name:'稀有', weight:15 },
+    epic:     { color:0xa855f7, name:'史诗', weight:7  },
+    memory:   { color:0xffdd66, name:'记忆', weight:3  }
 };
 
-const RESOURCE_NAMES = { wood:'木材', stone:'石料', metal:'金属', coal:'煤炭', food:'食物' };
-
-// =================== 引导阶段链 ===================
-const TUTORIAL_PHASES = [
-    {
-        id:'welcome',
-        title:'工程师，欢迎来到迷雾之地',
-        desc:'你从废墟中苏醒，唯一的装备是一把锈迹斑斑的蒸汽镐。<br>这片大陆被永恒的迷雾吞噬，只有光能驱散黑暗——而黑暗中藏着什么，无人知晓。<br><br>让我们先学会基本操作，然后建立你的第一个据点。',
-        objectives:['移动 (WASD) 熟悉操作'],
-        check:()=>{ if(!tutorialPhase.data) tutorialPhase.data={moved:false}; return tutorialPhase.data.moved; },
-        onEnter:()=>{ tutorialPhase.data={moved:false}; }
-    },
-    {
-        id:'gather_wood',
-        title:'第一步：采集木材',
-        desc:'木材是建造一切的基础。在你周围散落着蒸汽时代留下的枯萎植物——用 E 键采集它们。<br><br>按 E 采集附近的资源。资源会自动进入你的背包。',
-        objectives:['采集 4 单位木材'],
-        check:()=> playerData.resources.wood >= 4,
-        onEnter:()=> showMessage('先去采集木材！靠近资源按 E 采集', 'tutorial')
-    },
-    {
-        id:'build_torch',
-        title:'建造第一个光源：火把',
-        desc:'黑暗中隐藏着威胁，点亮周围是当务之急。<br><br>按 B 打开建造菜单，选择 🔦 火把，然后在地面上点击放置。火把会驱散周围的迷雾并让你看到隐藏的威胁。',
-        objectives:['按 B 打开建造菜单', '建造一个火把'],
-        check:()=> countBuilt('torch') >= 1,
-        onEnter:()=> showMessage('建造菜单 (B) → 选择火把 → 放置', 'tutorial'),
-        onComplete:()=> showMessage('火把点亮了周围！黑暗无处藏身。', 'success')
-    },
-    {
-        id:'gather_more',
-        title:'扩大资源：金属和石料',
-        desc:'有了光，你现在可以安心地探索更远的地方。寻找金属和石料——它们是制造更先进设施的关键。<br><br>提示：资源有明确的颜色——深色岩石是煤炭，灰色岩石是石料，带铜色的是金属矿。',
-        objectives:['采集 6 单位金属', '采集 4 单位石料', '采集 4 单位煤炭'],
-        check:()=> playerData.resources.metal >= 6 && playerData.resources.stone >= 4 && playerData.resources.coal >= 4,
-        onEnter:()=> showMessage('去探索！带上光，找矿脉，采集金属、石料、煤炭', 'tutorial')
-    },
-    {
-        id:'build_defense',
-        title:'建立防线：石墙 + 蒸汽炮台',
-        desc:'敌人正在逼近的路上。先建造石墙阻挡它们的路径，再建造蒸汽炮台主动还击。<br><br>🧱 石墙 (4石料+2金属) — 阻挡威胁移动<br>💣 蒸汽炮台 (8金属+5石料+3煤炭) — 自动攻击范围内的威胁',
-        objectives:['建造 2 段石墙', '建造 1 座蒸汽炮台'],
-        check:()=> countBuilt('wall') >= 2 && countBuilt('cannon') >= 1,
-        onEnter:()=> showMessage('快！威胁正在靠近。先挡再打！', 'tutorial'),
-        onComplete:()=> showMessage('防线就位！现在你能在黑暗中生存了。', 'success')
-    },
-    {
-        id:'build_workshop',
-        title:'建立产能：工坊',
-        desc:'生存是基础，发展才是胜利。工坊可以将木材加工成食物（3木材 → 5食物），让你在黑暗中坚持更久。<br><br>⚙️ 工坊 (15木材+10金属) — 靠近工坊按 E 进行加工',
-        objectives:['建造一座工坊', '在工坊加工至少 1 次食物'],
-        check:()=> countBuilt('workshop') >= 1 && playerData.workshopUsed >= 1,
-        onEnter:()=> showMessage('工坊 = 自给自足的循环。建造后靠近按 E 使用', 'tutorial'),
-        onComplete:()=> showMessage('工坊上线！你已具备可持续发展的能力。', 'success')
-    },
-    {
-        id:'build_tower',
-        title:'最终目标：扩展光源，点亮大陆',
-        desc:'小型光源范围有限。建造蒸汽灯或照明塔能照亮更大区域，让威胁无处藏身。<br><br>🏮 蒸汽灯 (3金属+2煤炭) — 照亮半径 10<br>🗼 照明塔 (10木材+8金属+5石料) — 照亮半径 18<br><br>去采矿补充金属！有了更大的光源，你就能看清更多地图，找到更多资源和威胁，形成正向循环。',
-        objectives:['建造至少 1 座蒸汽灯或照明塔（去探索采矿！）'],
-        check:()=> countBuilt('lamp') >= 1 || countBuilt('tower') >= 1,
-        onEnter:()=> showMessage('提示：去地图上已标记的金属/煤炭矿脉采集！', 'tutorial'),
-        onComplete:()=> { 
-            showMessage('引导完成！核心循环已建立：采集 → 分配 → 建造 → 防御 → 探索 → 循环！', 'success'); 
-            setTimeout(()=> showMessage('🚀 自由模式：继续点亮大陆到 65% 即可胜利！', 'info'), 2500);
-        }
-    }
+// 投放物列表（不是采集！是系统定时投放）
+const DROP_TABLE = [
+    // ===== 常见 =====
+    { item:'wood',       rarity:'common',   label:'木材',   icon:'🪵' },
+    { item:'stone',      rarity:'common',   label:'石料',   icon:'🪨' },
+    { item:'fiber',      rarity:'common',   label:'纤维',   icon:'🧵' },
+    // ===== 少见 =====
+    { item:'scrap',      rarity:'uncommon', label:'废金属', icon:'⚙️' },
+    { item:'cloth',      rarity:'uncommon', label:'布匹',   icon:'🧶' },
+    { item:'food',       rarity:'uncommon', label:'口粮',   icon:'🥫' },
+    { item:'coal',       rarity:'uncommon', label:'煤炭',   icon:'⚫' },
+    // ===== 稀有 =====
+    { item:'iron',       rarity:'rare',     label:'铁锭',   icon:'🔩' },
+    { item:'copper',     rarity:'rare',     label:'铜锭',   icon:'🟠' },
+    { item:'foodpack',   rarity:'rare',     label:'高级口粮',icon:'🍖' },
+    { item:'electronics',rarity:'rare',     label:'电子件', icon:'📟' },
+    // ===== 史诗 =====
+    { item:'alloy',      rarity:'epic',     label:'合金',   icon:'✨' },
+    { item:'medicine',   rarity:'epic',     label:'药剂',   icon:'💊' },
+    { item:'gear',       rarity:'epic',     label:'精密齿轮',icon:'🔧' },
 ];
 
-// =================== 游戏状态 ===================
-let scene, camera, renderer, clock;
-let playerGroup;
-let keys = {};
-let gameState = 'menu';
-let gameTime = 0;
-let dayCount = 1;
-let isNight = false;
+// 工具（武器、消耗品）
+const TOOLS = {
+    torch_item:  { name:'火把',   icon:'🔦', cost:{wood:2},                 desc:'照亮周围'},
+    repair_kit:  { name:'修理包', icon:'🔧', cost:{scrap:2,cloth:1},        desc:'修复建筑 30HP'},
+    medicine:    { name:'药剂',   icon:'💊', cost:{cloth:2,coal:1},         desc:'恢复 40HP'},
+    foodpack:    { name:'口粮',   icon:'🥫', cost:{cloth:1,fiber:2},        desc:'恢复饱腹度'},
+};
 
-// 移动端检测（UA + touch capability）
+// 建筑
+const BUILDINGS = {
+    campfire: { name:'营火',   icon:'🔥', cost:{wood:5,stone:3},                  light:8,  hp:80,  build:3, desc:'温暖的光，驱散黑暗'},
+    torch:    { name:'火把',   icon:'🔦', cost:{wood:2},                           light:6,  hp:30,  build:2, desc:'基础照明'},
+    lantern:  { name:'蒸汽灯', icon:'🏮', cost:{copper:2,coal:2},                 light:11, hp:50,  build:3, desc:'明亮稳定的灯光'},
+    wall:     { name:'石墙',   icon:'🧱', cost:{stone:4,scrap:1},                  light:0,  hp:180, build:3, desc:'阻挡威胁前进', blocks:true},
+    spike:    { name:'地刺',   icon:'📌', cost:{scrap:3,stone:2},                 light:0,  hp:40,  build:2, desc:'踩上去的威胁受伤', trap:true},
+    cannon:   { name:'蒸汽炮', icon:'💣', cost:{iron:3,copper:2,gear:1},          light:0,  hp:130, build:5, desc:'自动攻击威胁', atk:true, range:14, spd:1.2, dmg:22},
+    watchtower:{name:'守望塔',icon:'🗼', cost:{wood:8,iron:3,stone:3},           light:16, hp:200, build:7, desc:'照亮大片区域'},
+    workshop: { name:'工坊',   icon:'⚙️', cost:{wood:10,iron:3,gear:1},          light:4,  hp:120, build:6, desc:'解锁高级建造', workstation:true},
+    bed:      { name:'休息点', icon:'🛏', cost:{wood:5,cloth:3},                  light:0,  hp:60,  build:3, desc:'靠近恢复精神'},
+};
+
+// ================== 全局 ==================
 const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|BlackBerry/i.test(navigator.userAgent) || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 if (IS_MOBILE) document.body.classList.add('is-mobile');
 
-// 移动端输入状态
-let mobileInput = {
-    move: { x: 0, y: 0 },  // 摇杆归一化方向
-    joystickTouchId: null,
-    joystickCenter: null,
-    draggingCamera: false,
-    cameraTouchId: null,
-    lastCameraX: 0, lastCameraY: 0
-};
+let scene, camera, renderer, clock;
+let keys = {};
+let gameState = 'start'; // start / opening / playing / victory
+let gameTime = 0;
+let sandboxId = 0;
+let memoryPieces = [];
 
-let mapCells = [];
-let threats = [];
-let buildQueue = [];
-let projectiles = [];
-let decorations = [];
-
+let player, playerGroup;
 let playerData = {
-    pos: new THREE.Vector3(0, 0, 0),
-    health: 100, hunger: 100, sanity: 100,
-    resources: { wood: 6, stone: 0, metal: 0, coal: 0, food: 4 },
+    pos: new THREE.Vector3(0,0,0),
+    hp:100, food:80, sanity:90,
+    inv: { food:3, wood:1 },  // 初始：少量食物 + 火把材料
     currentBuild: null,
-    attackCooldown: 0, interactTarget: null,
-    workshopUsed: 0, lastEatTime: 0
+    attackCd: 0,
+    speedMul: 1
 };
 
-// 引导状态
-let tutorialPhase = { index: -1, active: false, data: null };
+let mapSize = CFG.MAP, cellSize = CFG.CELL;
+let cells = [];       // { terrain, height, revealed, lit, building, drop, fragment }
+let drops = [];       // 在空中的投放物（自动收集）
+let fragments = [];   // 记忆碎片（需要手动靠近拾取）
+let threats = [];
+let queue = [];       // 建造队列
+let projectiles = [];
 
-// 活动提示系统
-let activeHint = null;
-let hintTimer = 0;
+let mobile = { move:{x:0,y:0}, jid:null, jc:null };
 
-// =================== 初始化 ===================
+// ================== 开始动画 ==================
+function rollStartSequence() {
+    // 1. 随机滚动数字 0-100
+    sandboxId = Math.floor(Math.random()*100);
+    const numEl = document.getElementById('sandboxNum');
+    let n = 0;
+    const iv = setInterval(() => {
+        numEl.textContent = Math.floor(Math.random()*100);
+        n++;
+        if (n >= 30) {
+            clearInterval(iv);
+            numEl.textContent = sandboxId;
+            numEl.style.color = '#ffdd66';
+        }
+    }, 60);
+
+    // 2. 等待动画 + 点击进入
+    const showEl = document.getElementById('showNum');
+    showEl.textContent = sandboxId + 47; // 场次 = 沙箱 + 47
+
+    const screen = document.getElementById('startScreen');
+    const handler = () => {
+        if (gameState !== 'start') return;
+        gameState = 'opening';
+        screen.classList.add('fadeout');
+        setTimeout(() => startOpening(), 600);
+    };
+    screen.addEventListener('click', handler);
+    screen.addEventListener('touchstart', handler, { once:true });
+
+    if (IS_MOBILE) {
+        document.getElementById('joystick').classList.add('active');
+        document.getElementById('mobBtns').classList.add('active');
+    }
+    setTimeout(()=>{
+        document.getElementById('joystick').classList.add('active');
+        document.getElementById('mobBtns').classList.add('active');
+    }, 2000);
+}
+
+function startOpening() {
+    const eye = document.getElementById('eyeOverlay');
+    const flash = document.getElementById('dazeFlash');
+    document.getElementById('sandboxHud').textContent = sandboxId;
+
+    // 睁眼：屏幕从中间裂开，像眼睛睁开
+    eye.style.opacity = '1';
+    eye.classList.remove('open');
+    eye.classList.add('blink');
+
+    setTimeout(() => {
+        eye.classList.remove('blink');
+        eye.classList.add('open');
+    }, 400);
+
+    setTimeout(() => {
+        // 眩晕白闪
+        flash.style.opacity = '0.8';
+        setTimeout(() => { flash.style.opacity = '0'; }, 1200);
+    }, 1200);
+
+    setTimeout(() => {
+        eye.style.opacity = '0';
+        eye.style.transition = 'opacity .4s';
+        document.getElementById('sandboxNum').parentElement.parentElement.style.display = 'none';
+
+        // 载入"记忆碎片"提示
+        setTimeout(showMemoryIntro, 500);
+    }, 1800);
+}
+
+function showMemoryIntro() {
+    gameState = 'playing';
+    const tip = document.createElement('div');
+    tip.className = 'mem-intro';
+    tip.innerHTML = `
+        <h3>封存的记忆浮现</h3>
+        <div>你睁开眼。<br>
+        一堆<span style="color:#ffdd66">篝火</span>在身旁燃烧，<br>
+        背包里有少量<span style="color:#ffaa44">口粮</span>和一些<span style="color:#ffaa44">木材</span>。<br><br>
+        沙箱的天空灰暗。<br>
+        远处有不明声响。<br><br>
+        <span class="key">系统会定时投放物资</span>，<br>
+        只要进入你的视野，<span class="key">收集器会自动收集</span>。<br><br>
+        注意那闪着<span style="color:#a855f7">紫色光芒的碎片</span>——<br>
+        它们，可能是你回家的路。</div>
+        <div style="margin-top:14px;font-size:9px;color:#8b6914;letter-spacing:2px">（点击/触屏 继续）</div>
+    `;
+    document.body.appendChild(tip);
+    const close = () => {
+        tip.remove();
+    };
+    tip.addEventListener('click', close);
+    tip.addEventListener('touchstart', close, { once:true, passive:true });
+}
+
+// ================== 初始化 ==================
 function init() {
     clock = new THREE.Clock();
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0a0603);
-    scene.fog = new THREE.FogExp2(0x0a0603, 0.045);
+    scene.fog = new THREE.FogExp2(0x0a0603, 0.04);
 
-    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
-    camera.position.set(0, 22, 18);
-    camera.lookAt(0, 0, 0);
+    camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 500);
+    camera.position.set(0, 20, 14);
 
-    // 移动端性能降级
-    renderer = new THREE.WebGLRenderer({ antialias: !IS_MOBILE, powerPreference: IS_MOBILE ? 'low-power' : 'high-performance' });
-    renderer.setPixelRatio(IS_MOBILE ? Math.min(window.devicePixelRatio, 1.5) : Math.min(window.devicePixelRatio, 2));
+    renderer = new THREE.WebGLRenderer({ antialias:!IS_MOBILE, powerPreference:IS_MOBILE?'low-power':'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_MOBILE?1.5:2));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = !IS_MOBILE;
     renderer.shadowMap.type = IS_MOBILE ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.domElement.style.touchAction = 'none';
     document.body.appendChild(renderer.domElement);
 
-    // 禁用移动端双指缩放/捏合
-    renderer.domElement.style.touchAction = 'none';
-
-    scene.add(new THREE.AmbientLight(0x2a2030, 0.35));
+    scene.add(new THREE.AmbientLight(0x2a2030, 0.4));
     const sun = new THREE.DirectionalLight(0xffd4a0, 0.8);
-    sun.position.set(30, 50, 20);
-    sun.castShadow = true;
-    sun.shadow.mapSize.width = 2048;
-    sun.shadow.mapSize.height = 2048;
-    sun.shadow.camera.left = -60;
-    sun.shadow.camera.right = 60;
-    sun.shadow.camera.top = 60;
-    sun.shadow.camera.bottom = -60;
+    sun.position.set(30,50,20);
+    sun.castShadow = !IS_MOBILE;
+    sun.shadow.mapSize.set(1024,1024);
+    sun.shadow.camera.left = -50; sun.shadow.camera.right = 50;
+    sun.shadow.camera.top = 50; sun.shadow.camera.bottom = -50;
     scene.add(sun);
     scene.userData.sun = sun;
 
-    generateMap();
-    placeInitialResourcesNearPlayer();
+    buildWorld();
     createPlayer();
-    revealArea(playerData.pos, CONFIG.FOG_REVEAL_RADIUS);
-    updateLighting();
-    buildMenu();
+    createCampfire();
+    revealArea(playerData.pos, 8);
 
+    // 事件
     window.addEventListener('resize', onResize);
     window.addEventListener('keydown', e => {
         keys[e.code] = true;
-        if (gameState === 'playing') {
-            if (e.code === 'KeyB') toggleBuildMode();
-            if (e.code === 'KeyE') interact();
-            if (e.code === 'Space') { e.preventDefault(); attack(); }
-        }
+        if (e.code === 'KeyE') useNearby();
+        if (e.code === 'Space') attack();
+        if (e.code === 'Digit1') selectTab('tools');
+        if (e.code === 'Digit2') selectTab('build');
+        if (e.code === 'Digit3') selectTab('inv');
     });
     window.addEventListener('keyup', e => keys[e.code] = false);
-    renderer.domElement.addEventListener('click', onMouseClick);
+    renderer.domElement.addEventListener('click', onCanvasClick);
 
-    // ============ 移动端触摸控制 ============
-    if (IS_MOBILE) initMobileControls();
+    setupUI();
 
-    startGame();
+    if (IS_MOBILE) setupMobile();
+
+    rollStartSequence();
     animate();
 }
 
-function initMobileControls() {
-    const joystick = document.getElementById('joystick');
-    const knob = document.getElementById('joystickKnob');
-    const btnAttack = document.getElementById('btnAttack');
-    const btnInteract = document.getElementById('btnInteract');
-    const btnBuild = document.getElementById('btnBuild');
-    const btnCamera = document.getElementById('btnCamera');
+function onResize(){ camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth,window.innerHeight); }
 
-    // 显示移动端控件
-    joystick.classList.add('active');
-    document.getElementById('mobileButtons').classList.add('active');
+// ================== 世界 ==================
+function buildWorld() {
+    cells = [];
+    const tg = new THREE.Group(); tg.name = 'terrain'; scene.add(tg);
+    const colors = { grass:0x2a3a25, dirt:0x4a3520, stone:0x5a5a5a, water:0x1a3a4a, sand:0x6a5a3a, ruins:0x3a2a20 };
 
-    // 摇杆逻辑
-    joystick.addEventListener('touchstart', e => {
-        e.preventDefault();
-        const t = e.changedTouches[0];
-        mobileInput.joystickTouchId = t.identifier;
-        mobileInput.joystickCenter = { x: t.clientX, y: t.clientY };
-        updateJoystick(t.clientX, t.clientY);
-    }, { passive: false });
+    for (let x = 0; x < mapSize; x++) {
+        cells[x] = [];
+        for (let z = 0; z < mapSize; z++) {
+            const nx=x/10, nz=z/10;
+            const n = Math.sin(nx*2.5)*Math.cos(nz*2.5)+Math.sin(nx*1.3+nz*.7)*.5+Math.cos(nx*.5+nz*1.5)*.3;
+            let t, h;
+            if (n>.8){t='stone';h=1.2} else if (n>.4){t='grass';h=.3} else if (n>0){t='dirt';h=.2} else if (n>-.3){t='sand';h=.1} else if (n>-.6){t='ruins';h=.4} else {t='water';h=-.5};
+            const dc = Math.sqrt((x-mapSize/2)**2+(z-mapSize/2)**2);
+            if (dc<5){t='grass';h=.3}
 
-    joystick.addEventListener('touchmove', e => {
-        e.preventDefault();
-        for (const t of e.changedTouches) {
-            if (t.identifier === mobileInput.joystickTouchId) {
-                updateJoystick(t.clientX, t.clientY);
-            }
-        }
-    }, { passive: false });
+            const geo = new THREE.BoxGeometry(cellSize, Math.max(.1,h), cellSize);
+            const mat = new THREE.MeshLambertMaterial({ color: colors[t] });
+            const m = new THREE.Mesh(geo, mat);
+            m.position.set(x*cellSize-mapSize*cellSize/2, h/2, z*cellSize-mapSize*cellSize/2);
+            m.receiveShadow = true;
+            tg.add(m);
 
-    const resetJoystick = e => {
-        e.preventDefault();
-        for (const t of e.changedTouches) {
-            if (t.identifier === mobileInput.joystickTouchId) {
-                mobileInput.joystickTouchId = null;
-                mobileInput.move.x = 0;
-                mobileInput.move.y = 0;
-                knob.style.transform = 'translate(-50%,-50%)';
-            }
-        }
-    };
-    joystick.addEventListener('touchend', resetJoystick, { passive: false });
-    joystick.addEventListener('touchcancel', resetJoystick, { passive: false });
-
-    function updateJoystick(x, y) {
-        const center = mobileInput.joystickCenter;
-        const dx = x - center.x;
-        const dy = y - center.y;
-        const maxRadius = 50;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        const clamped = Math.min(dist, maxRadius);
-        const angle = Math.atan2(dy, dx);
-        const nx = Math.cos(angle) * (clamped / maxRadius);
-        const ny = Math.sin(angle) * (clamped / maxRadius);
-        mobileInput.move.x = nx;
-        mobileInput.move.y = ny;
-        // UI knob 位置
-        knob.style.transform = `translate(calc(-50% + ${nx*maxRadius}px), calc(-50% + ${ny*maxRadius}px))`;
-    }
-
-    // 画面空白处触摸 → 建造放置 OR 视角控制（可选）
-    // 这里用"长按画面=建造放置"的逻辑复用 onMouseClick
-
-    // 攻击按钮
-    btnAttack.addEventListener('touchstart', e => { e.preventDefault(); if (gameState==='playing') attack(); }, { passive: false });
-    // 交互按钮
-    btnInteract.addEventListener('touchstart', e => { e.preventDefault(); if (gameState==='playing') interact(); }, { passive: false });
-    // 建造按钮 - 循环切换类型
-    btnBuild.addEventListener('touchstart', e => {
-        e.preventDefault();
-        if (gameState!=='playing') return;
-        const types = ['torch','lamp','wall','cannon','workshop','tower'];
-        const idx = playerData.currentBuild ? types.indexOf(playerData.currentBuild) : -1;
-        playerData.currentBuild = types[(idx+1) % types.length];
-        showMessage(`建造: ${BUILDINGS[playerData.currentBuild].name}`, 'info');
-        updateBuildUI();
-    }, { passive: false });
-    // 视角按钮 - 切换建造/视角拖拽模式（当前未使用，保留）
-    btnCamera.addEventListener('touchstart', e => { e.preventDefault(); }, { passive: false });
-
-    // 画面点击 → 建造放置（触屏单次 tap）
-    let touchStartPos = null;
-    renderer.domElement.addEventListener('touchstart', e => {
-        if (gameState!=='playing') return;
-        if (mobileInput.joystickTouchId !== null) return; // 摇杆触控忽略
-        touchStartPos = e.changedTouches[0];
-    }, { passive: true });
-
-    renderer.domElement.addEventListener('touchend', e => {
-        if (gameState!=='playing') return;
-        if (!touchStartPos) return;
-        const t = e.changedTouches[0];
-        const dx = t.clientX - touchStartPos.clientX;
-        const dy = t.clientY - touchStartPos.clientY;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        // 如果是 tap（距离小），视为建造点击
-        if (dist < 15) {
-            if (playerData.currentBuild) {
-                handleTouchBuild(t.clientX, t.clientY);
-            }
-        }
-        touchStartPos = null;
-    }, { passive: true });
-
-    // 禁用移动端选择/缩放
-    document.addEventListener('gesturestart', e => e.preventDefault());
-    document.addEventListener('contextmenu', e => e.preventDefault());
-}
-
-function handleTouchBuild(clientX, clientY) {
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2(
-        (clientX / window.innerWidth) * 2 - 1,
-        -(clientY / window.innerHeight) * 2 + 1
-    );
-    raycaster.setFromCamera(mouse, camera);
-    const terrain = scene.getObjectByName('terrain');
-    const intersects = raycaster.intersectObjects(terrain.children);
-    if (intersects.length > 0) tryBuild(playerData.currentBuild, intersects[0].point);
-}
-
-function onResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-}
-
-// =================== 地图生成 ===================
-function generateMap() {
-    const size = CONFIG.MAP_SIZE;
-    const cellSize = CONFIG.CELL_SIZE;
-    mapCells = [];
-
-    const terrainGroup = new THREE.Group();
-    terrainGroup.name = 'terrain';
-    scene.add(terrainGroup);
-
-    for (let x = 0; x < size; x++) {
-        mapCells[x] = [];
-        for (let z = 0; z < size; z++) {
-            const nx = x / 10, nz = z / 10;
-            const noise = Math.sin(nx*2.5)*Math.cos(nz*2.5) + Math.sin(nx*1.3+nz*0.7)*0.5 + Math.cos(nx*0.5+nz*1.5)*0.3;
-
-            let terrain, height;
-            if (noise > 0.8) { terrain='stone'; height=1.2; }
-            else if (noise > 0.4) { terrain='grass'; height=0.3; }
-            else if (noise > 0) { terrain='dirt'; height=0.2; }
-            else if (noise > -0.3) { terrain='sand'; height=0.1; }
-            else if (noise > -0.6) { terrain='ruins'; height=0.4; }
-            else { terrain='water'; height=-0.5; }
-
-            const distFromCenter = Math.sqrt((x-size/2)**2 + (z-size/2)**2);
-            if (distFromCenter < 6) { terrain='grass'; height=0.3; }
-
-            const colors = { grass:0x2a3a25, dirt:0x4a3520, stone:0x5a5a5a, water:0x1a3a4a, sand:0x6a5a3a, ruins:0x3a2a20 };
-            const geo = new THREE.BoxGeometry(cellSize, Math.max(0.1, height), cellSize);
-            const mat = new THREE.MeshLambertMaterial({ color: colors[terrain] });
-            const cell = new THREE.Mesh(geo, mat);
-            cell.position.set(x*cellSize - size*cellSize/2, height/2, z*cellSize - size*cellSize/2);
-            cell.receiveShadow = true;
-            terrainGroup.add(cell);
-
-            mapCells[x][z] = {
-                x, z, worldX: cell.position.x, worldZ: cell.position.z,
-                terrain, height, mesh: cell,
-                revealed:false, lit:false, resource:null, building:null, threat:null
-            };
+            cells[x][z] = { x,z, wx:m.position.x, wz:m.position.z, terrain:t, height:h, mesh:m, revealed:false, lit:false, building:null, drop:null, fragment:null };
         }
     }
 
-    placeMapResources();
-    createFogOverlay();
+    // 迷雾
+    const fogC = document.createElement('canvas'); fogC.width=256; fogC.height=256;
+    const fogX = fogC.getContext('2d'); fogX.fillStyle='#000'; fogX.fillRect(0,0,256,256);
+    const fogT = new THREE.CanvasTexture(fogC);
+    const fogM = new THREE.MeshBasicMaterial({ map:fogT, transparent:true, depthWrite:false, side:THREE.DoubleSide, blending:THREE.CustomBlending, blendSrc:THREE.ZeroFactor, blendDst:THREE.OneMinusSrcAlphaFactor });
+    const fogG = new THREE.PlaneGeometry(mapSize*cellSize+4, mapSize*cellSize+4);
+    const fog = new THREE.Mesh(fogG, fogM); fog.rotation.x = -Math.PI/2; fog.position.y = 5;
+    scene.add(fog);
+    scene.userData = { fogX, fogT };
 }
 
-function placeMapResources() {
-    const size = CONFIG.MAP_SIZE;
-    for (let x = 0; x < size; x++) {
-        for (let z = 0; z < size; z++) {
-            const cell = mapCells[x][z];
-            const distFromCenter = Math.sqrt((x-size/2)**2 + (z-size/2)**2);
-            if (distFromCenter < 7) continue;
-            if (cell.terrain === 'water') continue;
-
-            const roll = Math.random();
-            let r = null;
-            if (cell.terrain === 'stone') {
-                if (roll < 0.35) r = { resource:'stone', color:0x8a8a8a };
-                else if (roll < 0.55) r = { resource:'coal', color:0x1a1a1a };
-                else if (roll < 0.7) r = { resource:'metal', color:0x9a7a5a };
-            } else if (cell.terrain === 'grass' || cell.terrain === 'dirt') {
-                if (roll < 0.35) r = { resource:'wood', color:0x4a3520 };
-                else if (roll < 0.5) r = { resource:'food', color:0x3a5a2a };
-            } else if (cell.terrain === 'ruins') {
-                if (roll < 0.4) r = { resource:'metal', color:0x9a7a5a };
-                else if (roll < 0.55) r = { resource:'coal', color:0x1a1a1a };
-                else if (roll < 0.65) r = { resource:'wood', color:0x4a3520 };
-            }
-
-            if (r) createResourceOnCell(cell, r);
+function updateFog() {
+    const ctx = scene.userData.fogX;
+    const ws = mapSize*cellSize, sc = 256/ws;
+    ctx.fillStyle = '#000'; ctx.fillRect(0,0,256,256);
+    for (let x=0;x<mapSize;x++) for (let z=0;z<mapSize;z++) {
+        const c = cells[x][z];
+        if (c.lit || c.revealed) {
+            const cx = (c.wx + ws/2)*sc, cy = (c.wz + ws/2)*sc;
+            ctx.fillStyle = c.lit ? '#ffffff' : 'rgba(100,90,70,.35)';
+            ctx.fillRect(cx-1, cy-1, cellSize*sc+2, cellSize*sc+2);
         }
     }
+    scene.userData.fogT.needsUpdate = true;
 }
 
-function placeInitialResourcesNearPlayer() {
-    // 在玩家附近确保有资源（引导用）
-    const size = CONFIG.MAP_SIZE;
-    const centerX = Math.floor(size / 2);
-    const centerZ = Math.floor(size / 2);
-    const required = [
-        // 近处木材 (采集阶段)
-        {dx:3, dz:0, resource:'wood', color:0x4a3520, amount:8},
-        {dx:-3, dz:0, resource:'wood', color:0x4a3520, amount:8},
-        {dx:0, dz:-3, resource:'wood', color:0x4a3520, amount:8},
-        // 食物
-        {dx:0, dz:3, resource:'food', color:0x3a5a2a, amount:6},
-        {dx:4, dz:4, resource:'food', color:0x3a5a2a, amount:5},
-        // 石料 (多个点)
-        {dx:5, dz:2, resource:'stone', color:0x8a8a8a, amount:6},
-        {dx:-7, dz:2, resource:'stone', color:0x8a8a8a, amount:6},
-        {dx:8, dz:-3, resource:'stone', color:0x8a8a8a, amount:6},
-        // 金属 (多个点)
-        {dx:-5, dz:-2, resource:'metal', color:0x9a7a5a, amount:5},
-        {dx:5, dz:-4, resource:'metal', color:0x9a7a5a, amount:5},
-        {dx:-8, dz:-4, resource:'metal', color:0x9a7a5a, amount:5},
-        {dx:3, dz:-8, resource:'metal', color:0x9a7a5a, amount:5},
-        // 煤炭
-        {dx:-5, dz:4, resource:'coal', color:0x1a1a1a, amount:5},
-        {dx:7, dz:4, resource:'coal', color:0x1a1a1a, amount:5},
-        {dx:-9, dz:2, resource:'coal', color:0x1a1a1a, amount:5},
-    ];
-
-    for (const r of required) {
-        const cx = centerX + r.dx, cz = centerZ + r.dz;
-        if (cx < 0 || cx >= size || cz < 0 || cz >= size) continue;
-        const cell = mapCells[cx][cz];
-        if (cell.resource) { scene.remove(cell.resource); cell.resource = null; }
-        createResourceOnCell(cell, { resource:r.resource, color:r.color }, r.amount || 5);
-        cell.terrain = cell.terrain === 'water' ? 'grass' : cell.terrain;
-    }
-}
-
-function createResourceOnCell(cell, resType, forcedAmount) {
-    const group = new THREE.Group();
-    const amt = forcedAmount || Math.floor(Math.random()*4) + 3;
-
-    if (resType.resource === 'wood') {
-        // 树
-        const trunk = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.25, 0.3, 2, 6),
-            new THREE.MeshLambertMaterial({ color: 0x4a3520 })
-        );
-        trunk.position.y = 1;
-        trunk.castShadow = true;
-        group.add(trunk);
-        const leaves = new THREE.Mesh(
-            new THREE.ConeGeometry(1.1, 2.5, 6),
-            new THREE.MeshLambertMaterial({ color: 0x3a5a2a })
-        );
-        leaves.position.y = 2.8;
-        leaves.castShadow = true;
-        group.add(leaves);
-    } else if (resType.resource === 'stone') {
-        const rock = new THREE.Mesh(
-            new THREE.DodecahedronGeometry(0.8, 0),
-            new THREE.MeshLambertMaterial({ color: resType.color, flatShading: true })
-        );
-        rock.scale.set(1, 0.7, 1);
-        rock.castShadow = true;
-        group.add(rock);
-    } else if (resType.resource === 'metal') {
-        const m = new THREE.Mesh(
-            new THREE.DodecahedronGeometry(0.6, 0),
-            new THREE.MeshLambertMaterial({ color: resType.color, flatShading: true, metalness: 0.3 })
-        );
-        m.castShadow = true;
-        group.add(m);
-        // 铜色矿脉斑点
-        for (let i = 0; i < 3; i++) {
-            const dot = new THREE.Mesh(
-                new THREE.SphereGeometry(0.1, 4, 4),
-                new THREE.MeshLambertMaterial({ color: 0xd49a3a })
-            );
-            dot.position.set((Math.random()-0.5), Math.random(), (Math.random()-0.5));
-            group.add(dot);
-        }
-    } else if (resType.resource === 'coal') {
-        const c = new THREE.Mesh(
-            new THREE.DodecahedronGeometry(0.7, 0),
-            new THREE.MeshLambertMaterial({ color: 0x1a1a1a, flatShading: true })
-        );
-        c.scale.set(1, 0.6, 1);
-        c.castShadow = true;
-        group.add(c);
-        // 光泽
-        for (let i = 0; i < 4; i++) {
-            const shiny = new THREE.Mesh(
-                new THREE.SphereGeometry(0.08, 4, 4),
-                new THREE.MeshBasicMaterial({ color: 0x444444 })
-            );
-            shiny.position.set((Math.random()-0.5)*0.8, Math.random()*0.5, (Math.random()-0.5)*0.8);
-            group.add(shiny);
-        }
-    } else if (resType.resource === 'food') {
-        const bush = new THREE.Mesh(
-            new THREE.SphereGeometry(0.55, 6, 6),
-            new THREE.MeshLambertMaterial({ color: 0x4a5a2a })
-        );
-        bush.position.y = 0.5;
-        bush.castShadow = true;
-        group.add(bush);
-        for (let i = 0; i < 5; i++) {
-            const b = new THREE.Mesh(
-                new THREE.SphereGeometry(0.12, 6, 6),
-                new THREE.MeshLambertMaterial({ color: 0x8a1a1a })
-            );
-            b.position.set((Math.random()-0.5)*0.7, 0.5 + Math.random()*0.4, (Math.random()-0.5)*0.7);
-            group.add(b);
-        }
-    }
-
-    group.position.set(
-        cell.worldX + (Math.random()-0.5)*1,
-        cell.height,
-        cell.worldZ + (Math.random()-0.5)*1
-    );
-    group.userData = {
-        isResource: true,
-        resource: resType.resource,
-        amount: amt,
-        cellX: cell.x,
-        cellZ: cell.z
-    };
-    scene.add(group);
-    cell.resource = group;
-}
-
-function createFogOverlay() {
-    const size = CONFIG.MAP_SIZE * CONFIG.CELL_SIZE;
-    const fogGeo = new THREE.PlaneGeometry(size + 4, size + 4);
-    const fogCanvas = document.createElement('canvas');
-    fogCanvas.width = 256; fogCanvas.height = 256;
-    const fogCtx = fogCanvas.getContext('2d');
-    fogCtx.fillStyle = '#000'; fogCtx.fillRect(0, 0, 256, 256);
-    const fogTex = new THREE.CanvasTexture(fogCanvas);
-    const fogMat = new THREE.MeshBasicMaterial({
-        map: fogTex, transparent: true, depthWrite: false, side: THREE.DoubleSide,
-        blending: THREE.CustomBlending, blendSrc: THREE.ZeroFactor, blendDst: THREE.OneMinusSrcAlphaFactor
-    });
-    const fogMesh = new THREE.Mesh(fogGeo, fogMat);
-    fogMesh.rotation.x = -Math.PI / 2;
-    fogMesh.position.y = 5;
-    scene.add(fogMesh);
-    scene.userData.fogCtx = fogCtx;
-    scene.userData.fogTex = fogTex;
-    scene.userData.fogMesh = fogMesh;
-}
-
-function updateFogCanvas() {
-    const ctx = scene.userData.fogCtx;
-    const size = CONFIG.MAP_SIZE;
-    const cellSize = CONFIG.CELL_SIZE;
-    const worldSize = size * cellSize;
-    const scale = 256 / worldSize;
-
-    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 256, 256);
-
-    for (let x = 0; x < size; x++) {
-        for (let z = 0; z < size; z++) {
-            const cell = mapCells[x][z];
-            if (cell.lit || cell.revealed) {
-                const cx = (cell.worldX + worldSize/2) * scale;
-                const cy = (cell.worldZ + worldSize/2) * scale;
-                const cp = cellSize * scale;
-                ctx.fillStyle = cell.lit ? 'rgba(255,255,255,1)' : 'rgba(100,90,70,0.35)';
-                ctx.fillRect(cx - cp/2, cy - cp/2, cp, cp);
-            }
-        }
-    }
-    scene.userData.fogTex.needsUpdate = true;
-}
-
-// =================== 玩家 ===================
-function createPlayer() {
-    playerGroup = new THREE.Group();
-
-    const body = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.4, 0.5, 1.1, 8),
-        new THREE.MeshLambertMaterial({ color: 0x3a2a1a })
-    );
-    body.position.y = 0.55; body.castShadow = true;
-    playerGroup.add(body);
-
-    const head = new THREE.Mesh(
-        new THREE.BoxGeometry(0.5, 0.5, 0.5),
-        new THREE.MeshLambertMaterial({ color: 0x8a7a5a })
-    );
-    head.position.y = 1.4; head.castShadow = true;
-    playerGroup.add(head);
-
-    // 蒸汽朋克头盔
-    const hat = new THREE.Mesh(
-        new THREE.ConeGeometry(0.35, 0.45, 8),
-        new THREE.MeshLambertMaterial({ color: 0x1a1a1a })
-    );
-    hat.position.y = 1.85; hat.castShadow = true;
-    playerGroup.add(hat);
-
-    const goggles = new THREE.Mesh(
-        new THREE.BoxGeometry(0.5, 0.12, 0.08),
-        new THREE.MeshLambertMaterial({ color: 0x2a2a2a })
-    );
-    goggles.position.set(0, 1.45, 0.28);
-    playerGroup.add(goggles);
-    const lensGeo = new THREE.SphereGeometry(0.08, 8, 8);
-    const lensMat = new THREE.MeshBasicMaterial({ color: 0xff4400 });
-    playerGroup.add(
-        new THREE.Mesh(lensGeo, lensMat).position.set(-0.11, 1.45, 0.3),
-        new THREE.Mesh(lensGeo, lensMat).position.set(0.11, 1.45, 0.3)
-    );
-
-    // 蒸汽镐
-    const pickaxe = new THREE.Group();
-    pickaxe.add(new THREE.Mesh(
-        new THREE.CylinderGeometry(0.04, 0.04, 0.8, 6),
-        new THREE.MeshLambertMaterial({ color: 0x4a3520 })
-    ));
-    const pickHead = new THREE.Mesh(
-        new THREE.BoxGeometry(0.14, 0.45, 0.06),
-        new THREE.MeshLambertMaterial({ color: 0x6a6a6a, metalness: 0.7 })
-    );
-    pickHead.position.y = 0.4;
-    pickaxe.add(pickHead);
-    pickaxe.position.set(0.5, 0.8, 0.2);
-    pickaxe.rotation.z = -0.3;
-    playerGroup.add(pickaxe);
-
-    playerGroup.position.copy(playerData.pos);
-    scene.add(playerGroup);
-
-    const pl = new THREE.PointLight(0xffaa44, 1.4, 7);
-    pl.position.set(0, 2, 0);
-    playerGroup.add(pl);
-    scene.userData.playerLight = pl;
-}
-
-// =================== 核心系统 ===================
-function revealArea(pos, radius) {
-    const size = CONFIG.MAP_SIZE;
-    const cellSize = CONFIG.CELL_SIZE;
-    const px = size/2 + pos.x/cellSize;
-    const pz = size/2 + pos.z/cellSize;
-    for (let x = Math.max(0, Math.floor(px-radius)); x < Math.min(size, Math.ceil(px+radius)); x++) {
-        for (let z = Math.max(0, Math.floor(pz-radius)); z < Math.min(size, Math.ceil(pz+radius)); z++) {
-            const dx = x-px, dz = z-pz;
-            if (dx*dx + dz*dz < radius*radius) mapCells[x][z].revealed = true;
-        }
+function revealArea(pos, r) {
+    const px = mapSize/2 + pos.x/cellSize;
+    const pz = mapSize/2 + pos.z/cellSize;
+    for (let x=Math.max(0,Math.floor(px-r));x<Math.min(mapSize,Math.ceil(px+r));x++)
+    for (let z=Math.max(0,Math.floor(pz-r));z<Math.min(mapSize,Math.ceil(pz+r));z++) {
+        const dx=x-px, dz=z-pz;
+        if (dx*dx+dz*dz<r*r) cells[x][z].revealed=true;
     }
 }
 
 function updateLighting() {
-    const size = CONFIG.MAP_SIZE;
-    const cellSize = CONFIG.CELL_SIZE;
-    for (let x = 0; x < size; x++) for (let z = 0; z < size; z++) mapCells[x][z].lit = false;
-
-    const lights = [{ x: playerData.pos.x, z: playerData.pos.z, r: 6 }];
-    scene.traverse(obj => {
-        if (obj.userData.isBuilding && obj.userData.lightRadius > 0 && !obj.userData.destroyed) {
-            lights.push({ x: obj.position.x, z: obj.position.z, r: obj.userData.lightRadius });
+    for (let x=0;x<mapSize;x++) for (let z=0;z<mapSize;z++) cells[x][z].lit=false;
+    const lights = [{x:playerData.pos.x, z:playerData.pos.z, r:5}];
+    scene.traverse(o => {
+        if (o.userData.build && o.userData.bm) {
+            const bm = o.userData.bm;
+            if (bm.light > 0 && !bm.destroyed) lights.push({x:o.position.x, z:o.position.z, r:bm.light});
         }
     });
-
-    for (const light of lights) {
-        const lx = size/2 + light.x/cellSize;
-        const lz = size/2 + light.z/cellSize;
-        for (let x = Math.max(0, Math.floor(lx-light.r)); x < Math.min(size, Math.ceil(lx+light.r)); x++) {
-            for (let z = Math.max(0, Math.floor(lz-light.r)); z < Math.min(size, Math.ceil(lz+light.r)); z++) {
-                const dx = x-lx, dz = z-lz;
-                if (Math.sqrt(dx*dx + dz*dz) < light.r/cellSize) {
-                    mapCells[x][z].lit = true;
-                    mapCells[x][z].revealed = true;
-                }
-            }
+    for (const L of lights) {
+        const lx=mapSize/2+L.x/cellSize, lz=mapSize/2+L.z/cellSize;
+        for (let x=Math.max(0,Math.floor(lx-L.r));x<Math.min(mapSize,Math.ceil(lx+L.r));x++)
+        for (let z=Math.max(0,Math.floor(lz-L.r));z<Math.min(mapSize,Math.ceil(lz+L.r));z++) {
+            const dx=x-lx, dz=z-lz;
+            if (Math.sqrt(dx*dx+dz*dz)<L.r/cellSize){ cells[x][z].lit=true; cells[x][z].revealed=true; }
         }
     }
-
-    updateFogCanvas();
-    updateLightPercent();
+    updateFog();
 }
 
-function updateLightPercent() {
-    const size = CONFIG.MAP_SIZE;
-    let lit = 0, total = 0;
-    for (let x = 0; x < size; x++) for (let z = 0; z < size; z++) {
-        if (mapCells[x][z].terrain !== 'water') { total++; if (mapCells[x][z].lit) lit++; }
+function getCell(wx,wz) {
+    const x=Math.floor(mapSize/2+wx/cellSize), z=Math.floor(mapSize/2+wz/cellSize);
+    if (x<0||x>=mapSize||z<0||z>=mapSize) return null;
+    return cells[x][z];
+}
+
+// ================== 玩家 ==================
+function createPlayer() {
+    playerGroup = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(.4,.5,1.1,8), new THREE.MeshLambertMaterial({color:0x3a2a1a}));
+    body.position.y=.55; body.castShadow=true; playerGroup.add(body);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(.5,.5,.5), new THREE.MeshLambertMaterial({color:0x8a7a5a}));
+    head.position.y=1.4; head.castShadow=true; playerGroup.add(head);
+    const hat = new THREE.Mesh(new THREE.ConeGeometry(.35,.4,8), new THREE.MeshLambertMaterial({color:0x1a1a1a}));
+    hat.position.y=1.85; playerGroup.add(hat);
+    const goggles = new THREE.Mesh(new THREE.BoxGeometry(.5,.12,.08), new THREE.MeshLambertMaterial({color:0x2a2a2a}));
+    goggles.position.set(0,1.45,.28); playerGroup.add(goggles);
+    const lg = new THREE.Mesh(new THREE.SphereGeometry(.08,8,8), new THREE.MeshBasicMaterial({color:0xff4400}));
+    const rg = lg.clone();
+    lg.position.set(-.11,1.45,.3); rg.position.set(.11,1.45,.3);
+    playerGroup.add(lg,rg);
+    playerGroup.position.copy(playerData.pos);
+    scene.add(playerGroup);
+
+    const pl = new THREE.PointLight(0xffaa44, 1.2, 6);
+    pl.position.set(0,2,0);
+    playerGroup.add(pl);
+    player = playerGroup;
+}
+
+function createCampfire() {
+    // 玩家旁 5 单位处放初始篝火
+    const pos = new THREE.Vector3(4, cells[mapSize/2][mapSize/2].height, 0);
+    const cell = getCell(pos.x, pos.z);
+    if (cell) {
+        // 确保有足够材料建造
+        playerData.inv.wood += 3;
+        playerData.inv.stone += 2;
+        buildStructure('campfire', pos, true);
     }
-    const pct = Math.round(lit/total*100);
-    document.getElementById('lightPercent').textContent = pct + '%';
-    if (lit/total >= CONFIG.WIN_LIGHT_PERCENT && gameState === 'playing') endGame('victory');
 }
 
-function getCellAt(wx, wz) {
-    const size = CONFIG.MAP_SIZE;
-    const x = Math.floor(size/2 + wx/CONFIG.CELL_SIZE);
-    const z = Math.floor(size/2 + wz/CONFIG.CELL_SIZE);
-    if (x<0||x>=size||z<0||z>=size) return null;
-    return mapCells[x][z];
-}
+// ================== 建造 ==================
+function buildStructure(type, pos, instant=false) {
+    const def = BUILDINGS[type];
+    const cell = getCell(pos.x, pos.z);
+    if (!cell) return null;
+    if (cell.terrain==='water') return null;
+    if (cell.building) return null;
 
-// =================== 建造系统 ===================
-function buildMenu() {
-    const menu = document.getElementById('buildMenu');
-    menu.innerHTML = '';
-    const types = ['torch', 'lamp', 'wall', 'cannon', 'workshop', 'tower'];
-    for (const t of types) {
-        const d = BUILDINGS[t];
-        const costStr = Object.entries(d.cost).map(([k,v]) => v+RESOURCE_NAMES[k]).join(' ');
-        const item = document.createElement('div');
-        item.className = 'build-item';
-        item.dataset.build = t;
-        item.innerHTML = `<div class="build-icon">${d.icon}</div><div class="build-name">${d.name}</div><div class="build-cost">${costStr}</div>`;
-        item.addEventListener('click', () => { if (gameState==='playing') selectBuild(t); });
-        menu.appendChild(item);
-    }
-    updateBuildUI();
-}
+    const b = new THREE.Group();
+    b.userData.build = true;
+    b.userData.bm = { ...def, hp:def.hp, maxHp:def.hp, type, destroyed:false, atkTimer:0 };
 
-function updateBuildUI() {
-    document.querySelectorAll('.build-item').forEach(item => {
-        const t = item.dataset.build;
-        const cost = BUILDINGS[t].cost;
-        const canAfford = Object.entries(cost).every(([r,a]) => playerData.resources[r] >= a);
-        item.classList.toggle('selected', playerData.currentBuild === t);
-        item.classList.toggle('disabled', !canAfford);
+    // 通用材质
+    const M = { metal: new THREE.MeshLambertMaterial({color:0x4a4a4a,metalness:.6}),
+                wood:  new THREE.MeshLambertMaterial({color:0x5a3a20}),
+                stone: new THREE.MeshLambertMaterial({color:0x6a6a6a}),
+                brass: new THREE.MeshLambertMaterial({color:0x8a6a3a,metalness:.5}) };
 
-        // 引导高亮：当前阶段需要的建筑
-        if (tutorialPhase.active && tutorialPhase.index >= 0) {
-            const phase = TUTORIAL_PHASES[tutorialPhase.index];
-            if ((tutorialPhase.index === 2 && t === 'torch') ||
-                (tutorialPhase.index === 4 && (t === 'wall' || t === 'cannon')) ||
-                (tutorialPhase.index === 5 && t === 'workshop') ||
-                (tutorialPhase.index === 6 && t === 'tower')) {
-                item.classList.add('required');
-            }
-        } else {
-            item.classList.remove('required');
+    switch(type){
+    case 'campfire':{
+        const logs = new THREE.Group();
+        for(let i=0;i<3;i++){
+            const l = new THREE.Mesh(new THREE.CylinderGeometry(.1,.1,.9,6), M.wood);
+            l.rotation.z = (i/3)*Math.PI*2 + .3;
+            logs.add(l);
         }
-    });
-}
+        logs.position.y=.2; b.add(logs);
+        const stones = new THREE.Group();
+        for(let i=0;i<5;i++){
+            const s = new THREE.Mesh(new THREE.DodecahedronGeometry(.18,0), M.stone);
+            const a = (i/5)*Math.PI*2;
+            s.position.set(Math.cos(a)*.5,.12,Math.sin(a)*.5);
+            stones.add(s);
+        }
+        b.add(stones);
+        const flame = new THREE.Mesh(new THREE.ConeGeometry(.25,.5,6), new THREE.MeshBasicMaterial({color:0xff6622}));
+        flame.position.y=.6; b.add(flame);
+        const fireLight = new THREE.PointLight(0xff8833, 1.8, def.light);
+        fireLight.position.y=.8; b.add(fireLight);
+        b.userData.flame = flame; b.userData.fireLight = fireLight;
+    } break;
+    case 'torch':{
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(.07,.07,1.5,6), M.wood);
+        pole.position.y=.75; b.add(pole);
+        const flame = new THREE.Mesh(new THREE.ConeGeometry(.2,.45,6), new THREE.MeshBasicMaterial({color:0xff6622}));
+        flame.position.y=1.55; b.add(flame);
+        const L = new THREE.PointLight(0xff8833, 1.2, def.light);
+        L.position.y=1.55; b.add(L);
+        b.userData.flame=flame;
+    } break;
+    case 'lantern':{
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(.08,.12,2,8), M.metal);
+        pole.position.y=1; b.add(pole);
+        const top = new THREE.Mesh(new THREE.CylinderGeometry(.22,.18,.3,8), M.brass);
+        top.position.y=2.15; b.add(top);
+        const bulb = new THREE.Mesh(new THREE.SphereGeometry(.2,8,8), new THREE.MeshBasicMaterial({color:0xffaa44}));
+        bulb.position.y=2.25; b.add(bulb);
+        b.add(new THREE.PointLight(0xffaa66, 1.5, def.light).position.set(0,2.25,0));
+    } break;
+    case 'wall':{
+        const w = new THREE.Mesh(new THREE.BoxGeometry(cellSize*.9,1.5,.35), M.stone);
+        w.position.y=.75; b.add(w);
+        for(let i=0;i<6;i++){
+            const r = new THREE.Mesh(new THREE.SphereGeometry(.05,6,6), M.brass);
+            r.position.set(-.8+(i%3)*.8,.35+Math.floor(i/3)*.7,.2);
+            b.add(r);
+        }
+    } break;
+    case 'spike':{
+        const base = new THREE.Mesh(new THREE.CylinderGeometry(.6,.7,.15,8), M.metal);
+        base.position.y=.07; b.add(base);
+        for(let i=0;i<6;i++){
+            const a = (i/6)*Math.PI*2;
+            const sp = new THREE.Mesh(new THREE.ConeGeometry(.08,.6,6), M.metal);
+            sp.position.set(Math.cos(a)*.35,.4,Math.sin(a)*.35);
+            sp.rotation.z = Math.cos(a)*.4;
+            sp.rotation.x = Math.sin(a)*.4;
+            b.add(sp);
+        }
+    } break;
+    case 'cannon':{
+        const base = new THREE.Mesh(new THREE.BoxGeometry(1.1,.35,1.1), M.wood);
+        base.position.y=.2; b.add(base);
+        const tur = new THREE.Mesh(new THREE.CylinderGeometry(.4,.5,.4,8), M.metal);
+        tur.position.y=.55; b.add(tur);
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(.12,.15,1.4,8), M.metal);
+        barrel.rotation.x=Math.PI/2; barrel.position.set(0,.6,.75); b.add(barrel);
+        b.userData.tur=tur; b.userData.barrel=barrel;
+    } break;
+    case 'watchtower':{
+        const base = new THREE.Mesh(new THREE.BoxGeometry(1.3,.4,1.3), M.stone);
+        base.position.y=.2; b.add(base);
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(.35,.45,3.5,8), M.metal);
+        shaft.position.y=2.15; b.add(shaft);
+        const top = new THREE.Mesh(new THREE.ConeGeometry(.7,.9,8), M.brass);
+        top.position.y=4.7; b.add(top);
+        const bulb = new THREE.Mesh(new THREE.SphereGeometry(.45,8,8), new THREE.MeshBasicMaterial({color:0xffdd88}));
+        bulb.position.y=3.9; b.add(bulb);
+        b.add(new THREE.PointLight(0xffdd66, 2.2, def.light).position.set(0,3.9,0));
+    } break;
+    case 'workshop':{
+        const b1 = new THREE.Mesh(new THREE.BoxGeometry(2.2,.35,1.8), M.wood); b1.position.y=.2; b.add(b1);
+        const b2 = new THREE.Mesh(new THREE.BoxGeometry(2,1.3,1.6), new THREE.MeshLambertMaterial({color:0x7a5a3a}));
+        b2.position.y=1; b.add(b2);
+        const roof = new THREE.Mesh(new THREE.ConeGeometry(1.8,1,4), new THREE.MeshLambertMaterial({color:0x3a2a1a}));
+        roof.position.y=2.2; roof.rotation.y=Math.PI/4; b.add(roof);
+        b.add(new THREE.PointLight(0xff8833, .8, def.light).position.set(0,1.8,0));
+    } break;
+    case 'bed':{
+        const base = new THREE.Mesh(new THREE.BoxGeometry(1.8,.3,1), M.wood);
+        base.position.y=.15; b.add(base);
+        const mat = new THREE.Mesh(new THREE.BoxGeometry(1.6,.15,.9), new THREE.MeshLambertMaterial({color:0x8a6a3a}));
+        mat.position.y=.37; b.add(mat);
+        const pillow = new THREE.Mesh(new THREE.BoxGeometry(.5,.15,.8), new THREE.MeshLambertMaterial({color:0xc9a961}));
+        pillow.position.set(-.55,.5,.02); b.add(pillow);
+    } break;
+    }
 
-function toggleBuildMode() {
-    playerData.currentBuild = playerData.currentBuild ? null : 'torch';
-    updateBuildUI();
-    showMessage(playerData.currentBuild ? '建造模式开启 — 左键放置' : '建造模式关闭', 'info');
-}
+    b.traverse(c=>{if(c.isMesh){c.castShadow=!IS_MOBILE;c.receiveShadow=!IS_MOBILE}});
+    b.position.set(pos.x, cell.height, pos.z);
 
-function selectBuild(type) {
-    playerData.currentBuild = playerData.currentBuild === type ? null : type;
-    updateBuildUI();
-    if (playerData.currentBuild) showMessage(`建造: ${BUILDINGS[type].name} — 左键放置`, 'info');
-}
-
-function onMouseClick(event) {
-    if (gameState !== 'playing' || !playerData.currentBuild) return;
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2(
-        (event.clientX/window.innerWidth)*2-1,
-        -(event.clientY/window.innerHeight)*2+1
-    );
-    raycaster.setFromCamera(mouse, camera);
-    const terrain = scene.getObjectByName('terrain');
-    const intersects = raycaster.intersectObjects(terrain.children);
-    if (intersects.length > 0) tryBuild(playerData.currentBuild, intersects[0].point);
+    if (instant) {
+        scene.add(b);
+        cell.building = b;
+    } else {
+        // 建造中 placeholder
+        b.visible = false;
+        const ph = new THREE.Mesh(new THREE.BoxGeometry(.6,.5,.6), new THREE.MeshBasicMaterial({color:0x8a6a3a,transparent:true,opacity:.5}));
+        ph.position.set(pos.x, cell.height+.25, pos.z);
+        scene.add(ph);
+        queue.push({ type, pos, cell, b, ph, progress:0, total:def.build });
+    }
+    return b;
 }
 
 function tryBuild(type, worldPos) {
     const def = BUILDINGS[type];
-    // 资源检查
-    for (const [res, amt] of Object.entries(def.cost)) {
-        if (playerData.resources[res] < amt) { showMessage(`${RESOURCE_NAMES[res]}不足！还需要 ${amt - playerData.resources[res]}`, 'danger'); return; }
+    for (const [r,a] of Object.entries(def.cost)) {
+        if ((playerData.inv[r]||0) < a) { showMsg(`${resName(r)}不足！需 ${a-(playerData.inv[r]||0)}`, 'warn'); return; }
     }
-    const cell = getCellAt(worldPos.x, worldPos.z);
-    if (!cell) { showMessage('无法建造', 'danger'); return; }
-    if (playerData.pos.distanceTo(worldPos) > 15) { showMessage('太远了，靠近点再建', 'danger'); return; }
-    if (cell.terrain === 'water') { showMessage('水上不能建造', 'danger'); return; }
-    if (cell.building) { showMessage('这里已有建筑', 'danger'); return; }
-    if (!cell.revealed) { showMessage('先探索这个区域', 'danger'); return; }
+    const cell = getCell(worldPos.x, worldPos.z);
+    if (!cell) { showMsg('无法建造','warn'); return; }
+    if (cell.terrain==='water') { showMsg('水上不能建造','warn'); return; }
+    if (cell.building) { showMsg('这里已有东西','warn'); return; }
+    if (!cell.revealed) { showMsg('先探索这个区域','warn'); return; }
+    if (playerData.pos.distanceTo(worldPos) > 15) { showMsg('太远了','warn'); return; }
 
-    // 扣资源
-    for (const [res, amt] of Object.entries(def.cost)) playerData.resources[res] -= amt;
-
-    const build = {
-        type, cell,
-        worldPos: new THREE.Vector3(worldPos.x, cell.height, worldPos.z),
-        progress: 0, total: def.buildTime
-    };
-    buildQueue.push(build);
-
-    const bm = createBuildingMesh(type, build.worldPos);
-    cell.building = bm;
-    bm.userData.buildProgress = build;
-    bm.visible = false;
-    showMessage(`开始建造 ${def.name}`, 'info');
-    updateBuildUI();
+    for (const [r,a] of Object.entries(def.cost)) playerData.inv[r] -= a;
+    buildStructure(type, worldPos);
+    showMsg(`开始建造 ${def.name}`, 'info');
+    updateUI();
 }
 
-function createBuildingMesh(type, pos) {
-    const g = new THREE.Group();
-    const d = BUILDINGS[type];
-    g.userData = { isBuilding:true, buildingType:type, hp:d.hp, maxHp:d.hp, lightRadius:d.lightRadius };
+// ================== 投放系统 ==================
+function rollDrop() {
+    const size = mapSize;
+    const center = { x: size/2, z: size/2 };
+    const attempts = 10;
 
-    // 通用参数
-    const mat = { metal: new THREE.MeshLambertMaterial({ color: 0x4a4a4a, metalness: 0.6 }),
-                  wood: new THREE.MeshLambertMaterial({ color: 0x5a3a20 }),
-                  stone: new THREE.MeshLambertMaterial({ color: 0x6a6a6a }),
-                  brass: new THREE.MeshLambertMaterial({ color: 0x8a6a3a, metalness: 0.5 }) };
-
-    if (type === 'torch') {
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.5, 6), mat.wood);
-        pole.position.y = 0.75; g.add(pole);
-        const flame = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.45, 6), new THREE.MeshBasicMaterial({ color: 0xff6622 }));
-        flame.position.y = 1.55; g.add(flame);
-        const light = new THREE.PointLight(0xff8833, 1.3, d.lightRadius);
-        light.position.y = 1.55; g.add(light);
-    } else if (type === 'lamp') {
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 2, 8), mat.metal);
-        pole.position.y = 1; g.add(pole);
-        const top = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.18, 0.3, 8), mat.brass);
-        top.position.y = 2.15; g.add(top);
-        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffaa44 }));
-        bulb.position.y = 2.25; g.add(bulb);
-        const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 6), mat.brass);
-        pipe.position.set(0.25, 1.8, 0); pipe.rotation.z = 0.4; g.add(pipe);
-        g.add(new THREE.PointLight(0xffaa66, 1.5, d.lightRadius).position.set(0, 2.25, 0));
-    } else if (type === 'wall') {
-        const w = new THREE.Mesh(new THREE.BoxGeometry(CONFIG.CELL_SIZE*0.9, 1.5, 0.35), mat.stone);
-        w.position.y = 0.75; g.add(w);
-        for (let i = 0; i < 4; i++) {
-            const r = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), mat.brass);
-            r.position.set(-0.7 + (i%2)*1.4, 0.35 + Math.floor(i/2)*0.8, 0.2);
-            g.add(r);
-        }
-    } else if (type === 'cannon') {
-        const base = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.35, 1.1), mat.wood);
-        base.position.y = 0.2; g.add(base);
-        const turret = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 0.4, 8), mat.metal);
-        turret.position.y = 0.58; g.add(turret);
-        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 1.4, 8), mat.metal);
-        barrel.rotation.x = Math.PI/2; barrel.position.set(0, 0.65, 0.75); g.add(barrel);
-        g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.06, 12).rotateZ(Math.PI/2), new THREE.MeshLambertMaterial({ color: 0x8a1a1a })).position.set(0.25, 0.6, -0.3));
-        g.userData.turret = turret; g.userData.barrel = barrel; g.userData.attackTimer = 0;
-    } else if (type === 'workshop') {
-        const base = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.35, 1.8), mat.wood);
-        base.position.y = 0.2; g.add(base);
-        const body = new THREE.Mesh(new THREE.BoxGeometry(2, 1.3, 1.6), new THREE.MeshLambertMaterial({ color: 0x7a5a3a }));
-        body.position.y = 1; g.add(body);
-        const roof = new THREE.Mesh(new THREE.ConeGeometry(1.8, 1, 4), new THREE.MeshLambertMaterial({ color: 0x3a2a1a }));
-        roof.position.y = 2.2; roof.rotation.y = Math.PI/4; g.add(roof);
-        const chimney = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 1.2, 8), mat.stone);
-        chimney.position.set(0.6, 3, 0); g.add(chimney);
-        // 齿轮
-        const gearGroup = new THREE.Group();
-        for (let i = 0; i < 3; i++) {
-            const gear = new THREE.Mesh(new THREE.CylinderGeometry(0.16 - i*0.02, 0.16 - i*0.02, 0.06, 10), mat.brass);
-            gear.rotation.z = Math.PI/2; gear.position.set(0, 1 + i*0.22, 0.82);
-            gearGroup.add(gear);
-        }
-        g.add(gearGroup);
-        g.userData.gears = gearGroup;
-        g.add(new THREE.PointLight(0xff8833, 0.8, d.lightRadius).position.set(0, 1.8, 0));
-    } else if (type === 'tower') {
-        const base = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.4, 1.4), mat.stone);
-        base.position.y = 0.2; g.add(base);
-        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 3.5, 8), mat.metal);
-        shaft.position.y = 2.15; g.add(shaft);
-        // 支撑梁
-        for (let i = 0; i < 4; i++) {
-            const beam = new THREE.Mesh(new THREE.BoxGeometry(0.12, 3, 0.12), mat.wood);
-            beam.rotation.y = i*Math.PI/2 + Math.PI/4;
-            beam.position.set(Math.cos(beam.rotation.y)*0.55, 1.7, Math.sin(beam.rotation.y)*0.55);
-            g.add(beam);
-        }
-        const top = new THREE.Mesh(new THREE.ConeGeometry(0.7, 0.9, 8), mat.brass);
-        top.position.y = 4.7; g.add(top);
-        const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.45, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffdd88 }));
-        bulb.position.y = 3.9; g.add(bulb);
-        g.add(new THREE.PointLight(0xffdd66, 2.2, d.lightRadius).position.set(0, 3.9, 0));
-    }
-
-    g.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
-    g.position.copy(pos);
-    scene.add(g);
-    return g;
-}
-
-// =================== 威胁系统 ===================
-function spawnThreat() {
-    const size = CONFIG.MAP_SIZE;
-    const attempts = 20;
-    for (let a = 0; a < attempts; a++) {
+    for (let a=0; a<attempts; a++) {
         const x = Math.floor(Math.random()*size);
         const z = Math.floor(Math.random()*size);
-        const cell = mapCells[x][z];
-        const dist = playerData.pos.distanceTo(new THREE.Vector3(cell.worldX, 0, cell.worldZ));
-        if (dist > 10 && dist < 35 && !cell.lit && cell.terrain !== 'water') {
-            const threat = createThreat(new THREE.Vector3(cell.worldX, cell.height, cell.worldZ));
-            threats.push(threat);
-            cell.threat = threat;
+        const cell = cells[x][z];
+        if (cell.terrain === 'water') continue;
+        const dist = Math.sqrt((x-center.x)**2 + (z-center.z)**2);
+        if (dist < 5) continue; // 不远投在出生点
+        if (cell.building) continue; // 建筑范围不投
+
+        // 稀有度权重抽取
+        const totalW = Object.values(RARITY).reduce((s,r)=>s+r.weight,0);
+        let roll = Math.random()*totalW;
+        let chosenRarity = 'common';
+        for (const [k,v] of Object.entries(RARITY)) {
+            roll -= v.weight;
+            if (roll <= 0) { chosenRarity = k; break; }
+        }
+        if (chosenRarity === 'memory') {
+            // 记忆碎片（极罕见）
+            spawnFragment(cell);
+            return;
+        }
+        // 从该稀有度池选物品
+        const pool = DROP_TABLE.filter(d=>d.rarity===chosenRarity);
+        const drop = pool[Math.floor(Math.random()*pool.length)];
+        spawnDrop(cell, drop, chosenRarity);
+        return;
+    }
+}
+
+function spawnDrop(cell, drop, rarityKey) {
+    const g = new THREE.Group();
+    const rarity = RARITY[rarityKey];
+    const size = .3 + Math.random()*.15;
+    const geo = new THREE.BoxGeometry(size,size,size);
+    const mat = new THREE.MeshLambertMaterial({ color: rarity.color, emissive: rarity.color, emissiveIntensity:.3, metalness:.4 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.castShadow = !IS_MOBILE;
+    g.add(mesh);
+
+    // 小光效
+    const sp = new THREE.PointLight(rarity.color, .6, 2);
+    g.add(sp);
+
+    g.userData = { isDrop:true, drop, rarity:rarityKey, vy:.1, cellX:cell.x, cellZ:cell.z, rot:Math.random()*Math.PI*2 };
+    g.position.set(cell.wx+(Math.random()-.5)*cellSize*.8, cell.height+.5, cell.wz+(Math.random()-.5)*cellSize*.8);
+    scene.add(g);
+    drops.push(g);
+    cell.drop = g;
+
+    // 下落动画
+    g.userData.fallFrom = g.position.y + 3;
+    g.userData.targetY = cell.height + .5;
+    g.position.y = g.userData.fallFrom;
+}
+
+function spawnFragment(cell) {
+    if (memoryPieces.length >= CFG.VICTORY_FRAGMENTS + 2) return; // 上限
+    const g = new THREE.Group();
+    const shape = new THREE.IcosahedronGeometry(.35, 0);
+    const mat = new THREE.MeshLambertMaterial({ color: 0xa855f7, emissive:0xa855f7, emissiveIntensity:1 });
+    const shard = new THREE.Mesh(shape, mat);
+    g.add(shard);
+    const L = new THREE.PointLight(0xa855f7, 1.5, 4);
+    g.add(L);
+    g.userData = { isFragment:true, cellX:cell.x, cellZ:cell.z, rot:0 };
+    g.position.set(cell.wx, cell.height+.6, cell.wz);
+    scene.add(g);
+    fragments.push(g);
+    cell.fragment = g;
+    showMsg('📡 有什么东西在附近闪烁...', 'mem');
+}
+
+function collectDrop(d) {
+    const cell = cells[d.userData.cellX][d.userData.cellZ];
+    if (cell) cell.drop = null;
+    const drop = d.userData.drop;
+    const amt = Math.floor(Math.random()*2)+1; // 1-2 个
+    playerData.inv[drop.item] = (playerData.inv[drop.item]||0) + amt;
+    showPickup(drop, amt, d.userData.rarity);
+    scene.remove(d);
+    drops = drops.filter(x => x!==d);
+    updateUI();
+}
+
+function collectFragment(f) {
+    const cell = cells[f.userData.cellX][f.userData.cellZ];
+    if (cell) cell.fragment = null;
+    memoryPieces.push(f);
+    showMsg(`✨ 拾得记忆碎片 (${memoryPieces.length}/${CFG.VICTORY_FRAGMENTS})`, 'mem');
+    scene.remove(f);
+    fragments = fragments.filter(x => x!==f);
+
+    // 到达胜利条件
+    if (memoryPieces.length >= CFG.VICTORY_FRAGMENTS) {
+        setTimeout(() => endGame('victory'), 1500);
+    }
+}
+
+function showPickup(drop, amt, rarityKey) {
+    const rarity = RARITY[rarityKey];
+    const div = document.createElement('div');
+    div.className = 'pickup-flash';
+    div.innerHTML = `<div style="color:${'#'+rarity.color.toString(16).padStart(6,'0')};font-size:14px;margin-bottom:4px">${rarity.name}</div>
+                    <div style="font-size:16px">${drop.icon} ${drop.label} ×${amt}</div>`;
+    document.body.appendChild(div);
+    setTimeout(() => div.remove(), 2500);
+}
+
+// ================== 威胁 ==================
+function spawnThreat() {
+    const size = mapSize;
+    for (let a=0;a<20;a++) {
+        const x = Math.floor(Math.random()*size);
+        const z = Math.floor(Math.random()*size);
+        const cell = cells[x][z];
+        if (cell.terrain === 'water') continue;
+        if (cell.lit) continue;
+        const dist = playerData.pos.distanceTo(new THREE.Vector3(cell.wx,0,cell.wz));
+        if (dist > 12 && dist < 30) {
+            threats.push(createThreat(new THREE.Vector3(cell.wx, cell.height, cell.wz)));
             return;
         }
     }
@@ -1201,684 +916,668 @@ function spawnThreat() {
 
 function createThreat(pos) {
     const g = new THREE.Group();
-    const t = Math.random();
-
-    if (t < 0.4) {
-        // 暗影猎犬
-        const bMat = new THREE.MeshLambertMaterial({ color: 0x1a0a1a });
-        const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.5, 1.2), bMat);
-        body.position.y = 0.4; g.add(body);
-        const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.5), bMat);
-        head.position.set(0, 0.5, 0.7); g.add(head);
-        const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff2222 });
-        const e1 = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), eyeMat).position.set(-0.1, 0.55, 0.95);
-        const e2 = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), eyeMat).position.set(0.1, 0.55, 0.95);
-        g.add(e1, e2);
-        for (let i = 0; i < 4; i++) {
-            const leg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.3, 0.12), bMat);
-            leg.position.set(i<2?-0.3:0.3, 0.15, i%2===0?-0.4:0.4);
-            g.add(leg);
+    const roll = Math.random();
+    let stats;
+    if (roll < .4) {
+        stats = { hp:35, dmg:10, spd:3, range:1.5, atkSpd:1.5 };
+        const body = new THREE.Mesh(new THREE.BoxGeometry(.8,.5,1.2), new THREE.MeshLambertMaterial({color:0x1a0a1a}));
+        body.position.y=.4; g.add(body);
+        const head = new THREE.Mesh(new THREE.BoxGeometry(.4,.4,.5), new THREE.MeshLambertMaterial({color:0x1a0a1a}));
+        head.position.set(0,.5,.7); g.add(head);
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(.05,6,6), new THREE.MeshBasicMaterial({color:0xff0000}));
+        const e2 = eye.clone(); e2.position.set(-.1,.55,.95); eye.position.set(.1,.55,.95);
+        g.add(eye,e2);
+        for(let i=0;i<4;i++){
+            const l = new THREE.Mesh(new THREE.BoxGeometry(.12,.3,.12), new THREE.MeshLambertMaterial({color:0x1a0a1a}));
+            l.position.set(i<2?-.3:.3, .15, i%2===0?-.4:.4); g.add(l);
         }
-        g.userData = { type:'hound', speed:3, hp:40, damage:10, attackRange:1.5, attackSpeed:1.5, eyes:[e1,e2] };
-    } else if (t < 0.75) {
-        // 爬行暗影
-        const bMat = new THREE.MeshLambertMaterial({ color: 0x0a050a });
-        const body = new THREE.Mesh(new THREE.SphereGeometry(0.6, 8, 8), bMat);
-        body.position.y = 0.5; g.add(body);
-        for (let i = 0; i < 6; i++) {
-            const tent = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.06, 0.5, 4), bMat);
+    } else if (roll < .75) {
+        stats = { hp:30, dmg:15, spd:2, range:1.8, atkSpd:2 };
+        const body = new THREE.Mesh(new THREE.SphereGeometry(.6,8,8), new THREE.MeshLambertMaterial({color:0x0a050a}));
+        body.position.y=.5; g.add(body);
+        for(let i=0;i<6;i++){
             const ang = (i/6)*Math.PI*2;
-            tent.position.set(Math.cos(ang)*0.4, 0.3, Math.sin(ang)*0.4);
-            tent.rotation.x = ang;
-            tent.userData.phase = i*Math.PI/3;
-            g.add(tent);
+            const t = new THREE.Mesh(new THREE.CylinderGeometry(.04,.06,.5,4), new THREE.MeshLambertMaterial({color:0x0a050a}));
+            t.position.set(Math.cos(ang)*.4,.3,Math.sin(ang)*.4); t.rotation.x=ang;
+            g.add(t);
         }
-        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff4400 }));
-        eye.position.y = 0.7; g.add(eye);
-        g.userData = { type:'crawler', speed:2, hp:30, damage:15, attackRange:1.8, attackSpeed:2, tentacles:g.children.filter(c=>c.geometry.type==='CylinderGeometry'), eye };
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(.12,8,8), new THREE.MeshBasicMaterial({color:0xff4400}));
+        eye.position.y=.7; g.add(eye);
     } else {
-        // 大型暗影
-        const bMat = new THREE.MeshLambertMaterial({ color: 0x150815 });
-        const body = new THREE.Mesh(new THREE.BoxGeometry(1.3, 1.8, 1), bMat);
-        body.position.y = 0.9; g.add(body);
-        const head = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), bMat);
-        head.position.y = 2.1; g.add(head);
-        for (let i = 0; i < 2; i++) {
-            const horn = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.4, 4), new THREE.MeshLambertMaterial({ color: 0x3a1a3a }));
-            horn.position.set(i===0?-0.22:0.22, 2.6, 0);
-            g.add(horn);
+        stats = { hp:100, dmg:25, spd:1.4, range:2, atkSpd:1 };
+        const body = new THREE.Mesh(new THREE.BoxGeometry(1.3,1.8,1), new THREE.MeshLambertMaterial({color:0x150815}));
+        body.position.y=.9; g.add(body);
+        const head = new THREE.Mesh(new THREE.BoxGeometry(.7,.7,.7), new THREE.MeshLambertMaterial({color:0x150815}));
+        head.position.y=2.1; g.add(head);
+        for(let i=0;i<2;i++){
+            const h = new THREE.Mesh(new THREE.ConeGeometry(.1,.4,4), new THREE.MeshLambertMaterial({color:0x3a1a3a}));
+            h.position.set(i===0?-.22:.22, 2.6, 0); g.add(h);
         }
-        const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-        const e1 = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), eyeMat).position.set(-0.18, 2.2, 0.35);
-        const e2 = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), eyeMat).position.set(0.18, 2.2, 0.35);
-        g.add(e1, e2);
-        g.userData = { type:'brute', speed:1.4, hp:100, damage:25, attackRange:2, attackSpeed:1, eyes:[e1,e2] };
+        const e = new THREE.Mesh(new THREE.SphereGeometry(.08,8,8), new THREE.MeshBasicMaterial({color:0xff0000}));
+        const e2 = e.clone(); e.position.set(-.18,2.2,.35); e2.position.set(.18,2.2,.35);
+        g.add(e,e2);
     }
-
-    g.userData.maxHp = g.userData.hp;
-    g.userData.attackTimer = 0;
+    g.userData = { hp:stats.hp, maxHp:stats.hp, dmg:stats.dmg, spd:stats.spd, range:stats.range, atkSpd:stats.atkSpd, atkT:0, eye:g.children.filter(c=>c.material&&c.material.color&&['#ff0000','#ff4400'].some(x=>c.material.color.getHexString()===x.replace('#','')))[0] };
     g.position.copy(pos);
-    g.traverse(c => { if (c.isMesh) c.castShadow = true; });
     scene.add(g);
     return g;
 }
 
-// =================== 交互 ===================
-function interact() {
-    if (gameState !== 'playing') return;
-    const t = playerData.interactTarget;
-    if (!t) return;
-
-    if (t.userData.isResource) {
-        const amount = t.userData.amount;
-        const res = t.userData.resource;
-        playerData.resources[res] += amount;
-        scene.remove(t);
-        const cell = mapCells[t.userData.cellX][t.userData.cellZ];
-        cell.resource = null;
-        showMessage(`+${amount} ${RESOURCE_NAMES[res]}`, 'success');
-
-        // 引导：欢迎阶段检测移动后直接进入采集阶段
-        if (tutorialPhase.active && tutorialPhase.index === 0 && !tutorialPhase.data.moved) {
-            tutorialPhase.data.moved = true;
-        }
-    } else if (t.userData.isBuilding && t.userData.buildingType === 'workshop') {
-        craftAtWorkshop();
-    }
-}
-
-function craftAtWorkshop() {
-    if (playerData.resources.wood >= 3 && playerData.resources.food < 20) {
-        playerData.resources.wood -= 3;
-        playerData.resources.food += 5;
-        playerData.workshopUsed++;
-        showMessage('工坊产出 +5 食物 (消耗 3 木材)', 'success');
-    } else if (playerData.resources.wood < 3) {
-        showMessage('工坊需要 3 木材', 'info');
-    } else {
-        showMessage('食物已满', 'info');
-    }
-    updateBuildUI();
-}
-
+// ================== 战斗 & 威胁AI ==================
 function attack() {
-    if (gameState !== 'playing' || playerData.attackCooldown > 0) return;
-    playerData.attackCooldown = 0.5;
-    let closest = null, closestDist = 2.5;
-    for (const th of threats) {
-        if (th.userData.hp <= 0) continue;
-        const d = playerData.pos.distanceTo(th.position);
-        if (d < closestDist) { closestDist = d; closest = th; }
+    if (gameState!=='playing' || playerData.attackCd>0) return;
+    playerData.attackCd = .45;
+    let closest=null, cd=2.5;
+    for (const t of threats){
+        if (t.userData.hp<=0) continue;
+        const d = playerData.pos.distanceTo(t.position);
+        if (d<cd){ cd=d; closest=t; }
     }
-    if (closest) {
-        const dmg = 20 + Math.random()*10;
-        closest.userData.hp -= dmg;
-        const knock = new THREE.Vector3().subVectors(closest.position, playerData.pos).normalize().multiplyScalar(0.8);
-        closest.position.add(knock);
-        showDamageNumber(closest.position, dmg);
-        if (closest.userData.hp <= 0) {
-            showMessage('击败威胁！', 'success');
-            if (Math.random() < 0.5) playerData.resources.metal += 1;
+    if (closest){
+        closest.userData.hp -= 20+Math.random()*10;
+        showDamage(closest.position, 20+Math.random()*10);
+        if (closest.userData.hp<=0){
+            showMsg('击败威胁','success');
             scene.remove(closest);
-            const c = getCellAt(closest.position.x, closest.position.z);
-            if (c) c.threat = null;
-            threats = threats.filter(t => t !== closest);
+            threats = threats.filter(t=>t!==closest);
         }
     }
 }
 
-function showDamageNumber(pos, dmg) {
-    const v = pos.clone().y += 1;
-    v.project(camera);
-    const x = (v.x*0.5+0.5)*window.innerWidth;
-    const y = (-v.y*0.5+0.5)*window.innerHeight;
+function showDamage(pos, dmg) {
+    const v = pos.clone(); v.y+=1; v.project(camera);
     const el = document.createElement('div');
-    el.className = 'damage-number';
-    el.textContent = `-${Math.round(dmg)}`;
-    el.style.left = x + 'px'; el.style.top = y + 'px';
+    el.className = 'pickup-flash';
+    el.style.color = '#ff4444';
+    el.style.fontSize = '18px';
+    el.style.fontWeight = 'bold';
+    el.innerHTML = `-${Math.round(dmg)}`;
+    el.style.background = 'rgba(10,6,3,.7)';
     document.body.appendChild(el);
-    setTimeout(() => el.remove(), 1000);
+    setTimeout(()=>el.remove(), 800);
 }
 
-// =================== 消息 ===================
-function showMessage(text, type='info') {
-    const log = document.getElementById('messageLog');
-    const el = document.createElement('div');
-    el.className = `message ${type}`;
-    el.textContent = text;
-    log.appendChild(el);
-    while (log.children.length > 6) log.removeChild(log.firstChild);
-    setTimeout(() => { el.style.opacity='0'; el.style.transition='opacity .5s'; setTimeout(()=>el.remove(), 500); }, 4000);
+// ================== 建造放置 ==================
+function onCanvasClick(e) {
+    if (gameState!=='playing') return;
+    if (!playerData.currentBuild) return;
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(
+        (e.clientX/window.innerWidth)*2-1,
+        -(e.clientY/window.innerHeight)*2+1
+    ), camera);
+    const terrain = scene.getObjectByName('terrain');
+    const hits = raycaster.intersectObjects(terrain.children);
+    if (hits.length>0) tryBuild(playerData.currentBuild, hits[0].point);
 }
 
-function showActionHint(title, body, type='info', duration=6) {
-    const hint = document.getElementById('actionHint');
-    hint.className = `action-hint ${type}`;
-    document.getElementById('actionHintTitle').textContent = title;
-    document.getElementById('actionHintBody').innerHTML = body;
-    hint.style.display = 'block';
-    activeHint = hint;
-    hintTimer = duration;
+// ================== UI 构建 ==================
+function resName(r) {
+    const n = { wood:'木材', stone:'石料', fiber:'纤维', scrap:'废金属', cloth:'布匹', food:'口粮', coal:'煤炭', iron:'铁锭', copper:'铜锭', foodpack:'高级口粮', electronics:'电子件', alloy:'合金', medicine:'药剂', gear:'精密齿轮', metal:'金属' };
+    return n[r] || r;
 }
 
-// =================== 引导系统 ===================
-function startTutorial() {
-    tutorialPhase = { index: 0, active: true, data: null };
-    renderTutorialPanel();
-}
+function setupUI() {
+    // Tab 切换
+    document.querySelectorAll('.tab').forEach(t => {
+        t.addEventListener('click', () => selectTab(t.dataset.tab));
+    });
+    document.getElementById('invBtn').addEventListener('click', ()=> selectTab('inv'));
 
-function renderTutorialPanel() {
-    const panel = document.getElementById('tutorialPanel');
-    if (!tutorialPhase.active || tutorialPhase.index < 0) { panel.classList.add('hidden'); return; }
-
-    const phase = TUTORIAL_PHASES[tutorialPhase.index];
-    document.getElementById('tutorialStepNum').textContent = `阶段 ${tutorialPhase.index+1}/${TUTORIAL_PHASES.length}`;
-    document.getElementById('tutorialTitle').textContent = phase.title;
-    document.getElementById('tutorialDesc').innerHTML = phase.desc;
-
-    const objectivesEl = document.getElementById('tutorialObjectives');
-    objectivesEl.innerHTML = '';
-    for (const obj of phase.objectives) {
-        const span = document.createElement('span');
-        span.textContent = '□ ' + obj;
-        objectivesEl.appendChild(span);
-    }
-    panel.classList.remove('hidden');
-    if (phase.onEnter) phase.onEnter();
-    updateBuildUI();
-}
-
-function checkTutorial() {
-    if (!tutorialPhase.active || tutorialPhase.index < 0) return;
-    const phase = TUTORIAL_PHASES[tutorialPhase.index];
-    if (phase.check()) {
-        if (phase.onComplete) phase.onComplete();
-        tutorialPhase.index++;
-        if (tutorialPhase.index >= TUTORIAL_PHASES.length) {
-            tutorialPhase.active = false;
-            document.getElementById('tutorialPanel').classList.add('hidden');
-            showMessage('🎉 引导完成！自由生存吧！', 'success');
-        } else {
-            setTimeout(renderTutorialPanel, 800);
-        }
-    }
-}
-
-// =================== 更新循环 ===================
-function update(dt) {
-    if (gameState !== 'playing') return;
-    gameTime += dt;
-
-    updateDayNight();
-    updatePlayer(dt);
-    updateCamera();
-    updateInteractTarget();
-    updateBuilding(dt);
-    updateThreats(dt);
-    updateTurrets(dt);
-    updatePlayerStats(dt);
-    updateActionHint(dt);
-    checkThreatSpawn();
-    checkTutorial();
-    updateHUD();
+    updateUI();
     updateMinimap();
 }
 
-function updateDayNight() {
-    const progress = (gameTime % CONFIG.DAY_LENGTH) / CONFIG.DAY_LENGTH;
-    const sun = scene.userData.sun;
-    sun.position.x = Math.cos(progress*Math.PI*2) * 45;
-    sun.position.y = Math.sin(progress*Math.PI*2) * 45;
-    sun.position.z = 20;
-    isNight = sun.position.y < 0;
-    sun.intensity = isNight ? 0.15 : 0.8;
-    dayCount = Math.floor(gameTime / CONFIG.DAY_LENGTH) + 1;
-    document.getElementById('dayCount').textContent = `第${dayCount}天`;
-    document.getElementById('dayPhase').textContent = isNight ? '黑夜' : '白昼';
+function selectTab(tab) {
+    document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.tab===tab));
+    document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active', p.dataset.panel===tab));
+    if (tab==='inv') updateInvPanel();
 }
 
-function updatePlayer(dt) {
-    if (playerData.attackCooldown > 0) playerData.attackCooldown -= dt;
+function updateUI() {
+    // 建造 tab - 只显示 cost 里全在玩家背包里（或 workshop 已建造解锁高级）的
+    const toolsGrid = document.getElementById('toolsGrid');
+    const buildGrid = document.getElementById('buildGrid');
+    const hasWorkshop = scene.children.some(o=>o.userData.build && o.userData.bm && o.userData.bm.workshop && !o.userData.bm.destroyed);
 
-    let dx = 0, dz = 0;
-    // PC 键盘
+    toolsGrid.innerHTML = '';
+    for (const [key,def] of Object.entries(TOOLS)){
+        const canAfford = Object.entries(def.cost).every(([r,a]) => (playerData.inv[r]||0)>=a);
+        const unlocked = true; // 工具都可用
+        const card = document.createElement('div');
+        card.className = 'build-card' + (canAfford&&unlocked ? '' : ' disabled');
+        card.innerHTML = `<div class="build-icon">${def.icon}</div><div class="build-name">${def.name}</div><div class="build-cost">${Object.entries(def.cost).map(([r,a])=>`${a}${rName(r)}`).join(' ')}</div>`;
+        card.title = def.desc;
+        if (canAfford&&unlocked) card.onclick = () => useTool(key);
+        toolsGrid.appendChild(card);
+    }
+
+    buildGrid.innerHTML = '';
+    for (const [key,def] of Object.entries(BUILDINGS)){
+        if (key==='campfire') continue; // 初始篝火
+
+        // 工坊以下解锁
+        const needsWorkshop = ['cannon','watchtower','workshop','alloy','medicine','gear'].includes(key) ||
+                              def.cost.iron || def.cost.gear || def.cost.alloy;
+        const unlocked = !needsWorkshop || hasWorkshop;
+
+        const canAfford = unlocked && Object.entries(def.cost).every(([r,a]) => (playerData.inv[r]||0)>=a);
+        const card = document.createElement('div');
+        card.className = 'build-card';
+        if (!unlocked) card.classList.add('disabled');
+        if (unlocked && !canAfford) card.classList.add('disabled');
+        if (playerData.currentBuild===key) card.classList.add('selected');
+        if (!unlocked) card.innerHTML = `<div style="font-size:20px">🔒</div><div class="build-name">需要工坊</div>`;
+        else {
+            card.innerHTML = `<div class="build-icon">${def.icon}</div><div class="build-name">${def.name}</div><div class="build-cost">${Object.entries(def.cost).map(([r,a])=>`${a}${rName(r)}`).join(' ')}</div>`;
+            card.title = def.desc;
+            if (canAfford) card.onclick = () => { playerData.currentBuild = playerData.currentBuild===key ? null : key; updateUI(); };
+        }
+        buildGrid.appendChild(card);
+    }
+
+    // HUD
+    document.getElementById('hpBar').style.width = Math.max(0,playerData.hp)+'%';
+    document.getElementById('hpTxt').textContent = Math.round(playerData.hp);
+    document.getElementById('foodBar').style.width = Math.max(0,playerData.food)+'%';
+    document.getElementById('foodTxt').textContent = Math.round(playerData.food);
+    document.getElementById('sanBar').style.width = Math.max(0,playerData.sanity)+'%';
+    document.getElementById('sanTxt').textContent = Math.round(playerData.sanity);
+    document.getElementById('memCount').textContent = `${memoryPieces.length}/${CFG.VICTORY_FRAGMENTS}`;
+
+    // 移动端建造提示
+    if (playerData.currentBuild) {
+        document.getElementById('mobHint').classList.add('active');
+        document.getElementById('mobHint').textContent = `当前建造: ${BUILDINGS[playerData.currentBuild].name}\n点击放置`;
+    } else {
+        document.getElementById('mobHint').classList.remove('active');
+    }
+}
+
+function updateInvPanel() {
+    const grid = document.getElementById('invGrid');
+    grid.innerHTML = '';
+    const items = Object.entries(playerData.inv).filter(([k,v])=>v>0);
+    if (items.length===0){
+        grid.innerHTML = '<div style="color:#5a4a2a;font-size:10px;padding:10px">收集器空空如也...系统会定时投放物资</div>';
+        return;
+    }
+    for (const [k,v] of items){
+        const drop = DROP_TABLE.find(d=>d.item===k);
+        const isTool = TOOLS[k];
+        const icon = drop?.icon || isTool?.icon || '📦';
+        const label = drop?.label || isTool?.name || resName(k);
+
+        const card = document.createElement('div');
+        card.className = 'inv-card';
+        card.innerHTML = `
+            <div class="inv-icon">${icon}</div>
+            <div class="inv-info">
+                <div class="inv-name">${label}</div>
+                <div class="inv-count">×${v}</div>
+            </div>`;
+        if (isTool || k==='food' || k==='foodpack' || k==='medicine') {
+            const btn = document.createElement('div');
+            btn.className = 'inv-btn'; btn.textContent = '使用';
+            btn.onclick = (ev) => { ev.stopPropagation(); useInvItem(k); };
+            card.appendChild(btn);
+        }
+        grid.appendChild(card);
+    }
+}
+
+function useTool(key) {
+    // 工具 = 直接建造（消耗cost → 生成对应效果）
+    const def = TOOLS[key];
+    for (const [r,a] of Object.entries(def.cost)) {
+        if ((playerData.inv[r]||0)<a){ showMsg(`${resName(r)}不足`,'warn'); return; }
+    }
+    for (const [r,a] of Object.entries(def.cost)) playerData.inv[r]-=a;
+
+    if (key==='torch_item') {
+        // 即时火把（放玩家脚下）
+        buildStructure('torch', new THREE.Vector3(playerData.pos.x, cells[mapSize/2][mapSize/2].height, playerData.pos.z));
+        showMsg('放置了火把','info');
+    } else if (key==='medicine') {
+        playerData.hp = Math.min(100, playerData.hp+40);
+        showMsg('恢复 40 生命值','success');
+    } else if (key==='foodpack') {
+        playerData.food = Math.min(100, playerData.food+50);
+        showMsg('恢复饱腹度','success');
+    } else if (key==='repair_kit') {
+        // 修最近的建筑
+        let target=null, td=8;
+        scene.traverse(o=>{
+            if (o.userData.build && o.userData.bm && !o.userData.bm.destroyed) {
+                const d = playerData.pos.distanceTo(o.position);
+                if (d<td){ td=d; target=o; }
+            }
+        });
+        if (target){
+            target.userData.bm.hp = Math.min(target.userData.bm.maxHp, target.userData.bm.hp+30);
+            showMsg('修复了建筑','success');
+        } else {
+            showMsg('附近没有可修的','warn');
+        }
+    }
+    updateUI(); updateInvPanel();
+}
+
+function useInvItem(k) {
+    if (k==='food' || k==='foodpack' || k==='medicine') {
+        playerData.inv[k]--;
+        if (k==='food') { playerData.food = Math.min(100, playerData.food+25); showMsg('吃了口粮 (+25 饱腹)','success'); }
+        if (k==='foodpack') { playerData.food = Math.min(100, playerData.food+60); showMsg('吃了高级口粮 (+60 饱腹)','success'); }
+        if (k==='medicine') { playerData.hp = Math.min(100, playerData.hp+40); showMsg('用药 (+40 HP)','success'); }
+        if (playerData.inv[k]<=0) delete playerData.inv[k];
+        updateUI(); updateInvPanel();
+    }
+}
+
+function useNearby() {
+    // 休息点恢复精神
+    scene.traverse(o=>{
+        if (o.userData.build && o.userData.bm && o.userData.bm.bed && !o.userData.bm.destroyed) {
+            if (playerData.pos.distanceTo(o.position) < 4) {
+                playerData.sanity = Math.min(100, playerData.sanity+15);
+                showMsg('在休息点恢复了精神','success');
+            }
+        }
+        if (o.userData.build && o.userData.bm && o.userData.bm.workshop && !o.userData.bm.destroyed) {
+            if (playerData.pos.distanceTo(o.position) < 5) {
+                showMsg('工坊已解锁全部高级建造','info');
+            }
+        }
+    });
+}
+
+function showMsg(text, type='info') {
+    const log = document.getElementById('msgLog');
+    const div = document.createElement('div');
+    div.className = 'msg ' + (type==='warn'?'warn':type==='mem'?'mem':type==='success'?'success':'');
+    div.textContent = text;
+    log.appendChild(div);
+    while (log.children.length > 5) log.removeChild(log.firstChild);
+    setTimeout(()=>{ div.style.opacity='0'; setTimeout(()=>div.remove(), 500); }, 4000);
+}
+
+function updateMinimap() {
+    const canvas = document.getElementById('minimap');
+    const ctx = canvas.getContext('2d');
+    const size = mapSize;
+    const cs = canvas.width/size;
+    ctx.fillStyle = '#0a0603'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    for (let x=0;x<size;x++) for (let z=0;z<size;z++){
+        const c = cells[x][z];
+        const px=x*cs, py=z*cs;
+        if (c.lit){
+            const col = {grass:'#4a5a35',dirt:'#6a5a35',stone:'#8a8a8a',water:'#3a6a7a',sand:'#8a7a4a',ruins:'#5a4530'}[c.terrain];
+            ctx.fillStyle = col||'#555'; ctx.fillRect(px,py,cs+1,cs+1);
+            if (c.building){ ctx.fillStyle='#ffdd66'; ctx.fillRect(px+cs/4,py+cs/4,cs/2,cs/2); }
+            if (c.fragment){ ctx.fillStyle='#a855f7'; ctx.fillRect(px+cs/3,py+cs/3,cs/3,cs/3); }
+        } else if (c.revealed){
+            ctx.fillStyle = '#1e1812'; ctx.fillRect(px,py,cs+1,cs+1);
+        }
+    }
+    const px2 = (size/2 + playerData.pos.x/cellSize)*cs;
+    const py2 = (size/2 + playerData.pos.z/cellSize)*cs;
+    ctx.fillStyle='#ffaa33';
+    ctx.beginPath(); ctx.arc(px2,py2,3,0,Math.PI*2); ctx.fill();
+}
+
+// ================== 移动端 ==================
+function setupMobile() {
+    const joy = document.getElementById('joystick');
+    const knob = document.querySelector('#joystick .knob');
+
+    joy.addEventListener('touchstart', e=>{
+        e.preventDefault();
+        const t = e.changedTouches[0];
+        mobile.jid = t.identifier;
+        mobile.jc = {x:t.clientX, y:t.clientY};
+        updateJoy(t.clientX, t.clientY);
+    }, {passive:false});
+    joy.addEventListener('touchmove', e=>{
+        e.preventDefault();
+        for (const t of e.changedTouches)
+            if (t.identifier===mobile.jid) updateJoy(t.clientX, t.clientY);
+    }, {passive:false});
+    const reset = e => {
+        e.preventDefault();
+        for (const t of e.changedTouches)
+            if (t.identifier===mobile.jid){ mobile.jid=null; mobile.move.x=0; mobile.move.y=0; knob.style.transform='translate(-50%,-50%)'; }
+    };
+    joy.addEventListener('touchend', reset, {passive:false});
+    joy.addEventListener('touchcancel', reset, {passive:false});
+
+    function updateJoy(x,y){
+        const dx=x-mobile.jc.x, dy=y-mobile.jc.y, max=50;
+        const d = Math.min(Math.sqrt(dx*dx+dy*dy), max);
+        const ang = Math.atan2(dy,dx);
+        const nx = Math.cos(ang)*(d/max), ny = Math.sin(ang)*(d/max);
+        mobile.move.x = nx; mobile.move.y = ny;
+        knob.style.transform = `translate(calc(-50% + ${nx*max}px), calc(-50% + ${ny*max}px))`;
+    }
+
+    document.getElementById('btnAttack').addEventListener('touchstart', e=>{e.preventDefault(); attack();}, {passive:false});
+    document.getElementById('btnPlace').addEventListener('touchstart', e=>{
+        e.preventDefault();
+        if (!playerData.currentBuild){
+            const seq = ['torch','lantern','wall','spike','cannon','watchtower','workshop','bed'];
+            const i = Math.floor(Math.random()*seq.length);
+            playerData.currentBuild = seq[i];
+        }
+        // 找到相机中心位置放置
+        const target = playerData.pos.clone();
+        target.x += Math.cos(playerGroup.rotation.y)*4;
+        target.z += Math.sin(playerGroup.rotation.y)*4;
+        tryBuild(playerData.currentBuild, target);
+    }, {passive:false});
+
+    // 画面tap放置
+    let tStart = null;
+    renderer.domElement.addEventListener('touchstart', e=>{
+        if (mobile.jid!==null) return;
+        if (!playerData.currentBuild) return;
+        tStart = e.changedTouches[0];
+    }, {passive:true});
+    renderer.domElement.addEventListener('touchend', e=>{
+        if (!tStart) return;
+        const t = e.changedTouches[0];
+        const dx=t.clientX-tStart.clientX, dy=t.clientY-tStart.clientY;
+        if (Math.sqrt(dx*dx+dy*dy)<15){
+            const rc = new THREE.Raycaster();
+            rc.setFromCamera(new THREE.Vector2(
+                (t.clientX/window.innerWidth)*2-1,
+                -(t.clientY/window.innerHeight)*2+1
+            ), camera);
+            const hits = rc.intersectObjects(scene.getObjectByName('terrain').children);
+            if (hits.length>0) tryBuild(playerData.currentBuild, hits[0].point);
+        }
+        tStart=null;
+    }, {passive:true});
+
+    document.addEventListener('gesturestart', e=>e.preventDefault());
+    document.addEventListener('contextmenu', e=>e.preventDefault());
+}
+
+// ================== 主循环 ==================
+function update(dt) {
+    if (gameState !== 'playing') {
+        renderer.render(scene, camera);
+        requestAnimationFrame(()=>update(dt));
+        return;
+    }
+    gameTime += dt;
+
+    // 昼夜
+    const prog = (gameTime % CFG.DAY_LEN) / CFG.DAY_LEN;
+    const sun = scene.userData.sun;
+    sun.position.x = Math.cos(prog*Math.PI*2)*45;
+    sun.position.y = Math.sin(prog*Math.PI*2)*45;
+    sun.position.z = 20;
+    const night = sun.position.y < 0;
+    sun.intensity = night ? 0.15 : 0.8;
+
+    // 玩家移动
+    if (playerData.attackCd>0) playerData.attackCd-=dt;
+    let dx=0, dz=0;
     if (keys['KeyW']) dz -= 1;
     if (keys['KeyS']) dz += 1;
     if (keys['KeyA']) dx -= 1;
     if (keys['KeyD']) dx += 1;
-    // 移动端摇杆（摇杆 y 正=向下，对应世界 +z）
-    dx += mobileInput.move.x;
-    dz += mobileInput.move.y;
+    dx += mobile.move.x;
+    dz += mobile.move.y;
 
-    if (dx !== 0 || dz !== 0) {
-        const len = Math.sqrt(dx*dx + dz*dz);
-        dx /= len; dz /= len;
+    const moved = dx!==0 || dz!==0;
+    if (moved) {
+        const len = Math.sqrt(dx*dx+dz*dz);
+        dx/=len; dz/=len;
+        const newX = playerData.pos.x + dx*CFG.PLAYER_SPEED*dt;
+        const newZ = playerData.pos.z + dz*CFG.PLAYER_SPEED*dt;
 
-        const newX = playerData.pos.x + dx * CONFIG.PLAYER_SPEED * dt;
-        const newZ = playerData.pos.z + CONFIG.PLAYER_SPEED * dt;
-
-        const cellX = getCellAt(newX, playerData.pos.z);
-        const cellZ = getCellAt(playerData.pos.x, newZ);
-        const blockedX = cellX && cellX.building && BUILDINGS[cellX.building.userData.buildingType]?.blocksPath;
-        const blockedZ = cellZ && cellZ.building && BUILDINGS[cellZ.building.userData.buildingType]?.blocksPath;
-
-        const bound = CONFIG.MAP_SIZE * CONFIG.CELL_SIZE / 2 - CONFIG.CELL_SIZE;
-        if (!blockedX) playerData.pos.x = Math.max(-bound, Math.min(bound, newX));
-        if (!blockedZ) playerData.pos.z = Math.max(-bound, Math.min(bound, newZ));
-
-        const cell = getCellAt(playerData.pos.x, playerData.pos.z);
-        if (cell && cell.terrain !== 'water') playerData.pos.y = cell.height;
+        // 墙壁阻挡
+        let bx=false, bz=false;
+        for (const o of scene.children){
+            if (o.userData.build && o.userData.bm && o.userData.bm.blocks && !o.userData.bm.destroyed){
+                if (Math.abs(newX-o.position.x)<1 && Math.abs(playerData.pos.z-o.position.z)<1) bx=true;
+                if (Math.abs(playerData.pos.x-o.position.x)<1 && Math.abs(newZ-o.position.z)<1) bz=true;
+            }
+        }
+        if (!bx) playerData.pos.x = newX;
+        if (!bz) playerData.pos.z = newZ;
+        const bound = mapSize*cellSize/2-cellSize;
+        playerData.pos.x = Math.max(-bound, Math.min(bound, playerData.pos.x));
+        playerData.pos.z = Math.max(-bound, Math.min(bound, playerData.pos.z));
+        const c = getCell(playerData.pos.x, playerData.pos.z);
+        if (c && c.terrain!=='water') playerData.pos.y = c.height;
 
         playerGroup.rotation.y = Math.atan2(dx, dz);
-        revealArea(playerData.pos, CONFIG.FOG_REVEAL_RADIUS);
+        revealArea(playerData.pos, 7);
         updateLighting();
-
-        // 引导检测：第一步移动
-        if (tutorialPhase.active && tutorialPhase.index === 0 && !tutorialPhase.data) tutorialPhase.data = { moved:false };
-        if (tutorialPhase.active && tutorialPhase.index === 0 && !tutorialPhase.data.moved && (dx !== 0 || dz !== 0)) {
-            tutorialPhase.data.moved = true;
-        }
     }
 
     playerGroup.position.copy(playerData.pos);
-    playerGroup.position.y += Math.sin(gameTime*5) * 0.04 * (dx!==0||dz!==0 ? 1 : 0);
-}
+    playerGroup.position.y += Math.sin(gameTime*5)*.04*moved;
 
-function updateCamera() {
-    const target = new THREE.Vector3(playerData.pos.x, 20, playerData.pos.z + 15);
-    camera.position.lerp(target, 0.04);
+    // 相机跟随
+    const camTarget = new THREE.Vector3(playerData.pos.x, 17, playerData.pos.z + 12);
+    camera.position.lerp(camTarget, 0.04);
     camera.lookAt(playerData.pos.x, 1, playerData.pos.z);
-}
 
-function updateInteractTarget() {
-    let closest = null, closestDist = 3;
-    scene.traverse(obj => {
-        if (obj.userData.isResource) {
-            const d = playerData.pos.distanceTo(obj.position);
-            if (d < closestDist) { closestDist = d; closest = obj; }
-        }
-        if (obj.userData.isBuilding && obj.userData.buildingType === 'workshop' && !obj.userData.destroyed) {
-            const d = playerData.pos.distanceTo(obj.position);
-            if (d < closestDist) { closestDist = d; closest = obj; }
-        }
-    });
-    playerData.interactTarget = closest;
-
-    const hint = document.getElementById('interactHint');
-    if (closest) {
-        let text = '';
-        if (closest.userData.isResource) text = `采集 ${RESOURCE_NAMES[closest.userData.resource]} (E)  ×${closest.userData.amount}`;
-        else if (closest.userData.isBuilding && closest.userData.buildingType === 'workshop') text = '使用工坊 (E) — 3木材→5食物';
-        hint.textContent = text;
-        hint.style.display = 'block';
-    } else hint.style.display = 'none';
-}
-
-function updateBuilding(dt) {
-    const toRemove = [];
-    for (const build of buildQueue) {
-        build.progress += dt;
-        const bm = build.cell.building;
-        if (!bm.userData.buildingPlaceholder) {
-            const ph = new THREE.Mesh(
-                new THREE.BoxGeometry(0.6, 0.5, 0.6),
-                new THREE.MeshBasicMaterial({ color: 0x8a6a3a, transparent: true, opacity: 0.5 })
-            );
-            ph.position.set(build.worldPos.x, build.worldPos.y + 0.25, build.worldPos.z);
-            bm.userData.buildingPlaceholder = ph;
-            scene.add(ph);
-        }
-        const frac = build.progress / build.total;
-        const ph = bm.userData.buildingPlaceholder;
-        ph.scale.set(0.3 + frac*0.7, frac, 0.3 + frac*0.7);
-        ph.position.y = build.worldPos.y + ph.scale.y * 0.5;
-
-        if (build.progress >= build.total) {
-            bm.visible = true;
-            if (ph) scene.remove(ph);
-            bm.userData.buildProgress = null;
-            bm.userData.lightRadius = BUILDINGS[build.type].lightRadius;
-            showMessage(`${BUILDINGS[build.type].name} 建造完成！`, 'success');
+    // 建造进度
+    for (let i=queue.length-1; i>=0; i--){
+        const q = queue[i];
+        q.progress += dt;
+        const frac = q.progress / q.total;
+        q.ph.scale.set(0.3+frac*0.7, frac, 0.3+frac*0.7);
+        q.ph.position.y = q.pos.y + frac*0.3;
+        if (q.progress >= q.total){
+            scene.remove(q.ph);
+            scene.add(q.b);
+            q.cell.building = q.b;
+            q.b.visible = true;
+            queue.splice(i,1);
+            showMsg(`${BUILDINGS[q.type].name} 建造完成`,'success');
             updateLighting();
-            // 进入下一引导阶段检查
-            checkTutorial();
-            toRemove.push(build);
+            updateUI();
         }
     }
-    buildQueue = buildQueue.filter(b => !toRemove.includes(b));
-}
 
-function updateThreats(dt) {
-    const toRemove = [];
-    for (const th of threats) {
-        const ud = th.userData;
-        if (ud.hp <= 0) { toRemove.push(th); continue; }
+    // 威胁生成（开局30秒后）
+    if (gameTime > 25 && gameTime % CFG.SPAWN_INTERVAL < dt){
+        if (Math.random() < 0.7) spawnThreat();
+    }
 
-        const cell = getCellAt(th.position.x, th.position.z);
+    // 威胁AI
+    for (let i=threats.length-1; i>=0; i--){
+        const t = threats[i];
+        const u = t.userData;
+        if (u.hp<=0){ scene.remove(t); threats.splice(i,1); continue; }
+        const cell = getCell(t.position.x, t.position.z);
         const inLight = cell && cell.lit;
 
-        let target = null, tPos = null, tDist = Infinity;
-        const pDist = th.position.distanceTo(playerData.pos);
-        if (pDist < tDist) { target = 'player'; tPos = playerData.pos; tDist = pDist; }
-
-        scene.traverse(obj => {
-            if (obj.userData.isBuilding && obj.userData.hp > 0 && !obj.userData.destroyed && BUILDINGS[obj.userData.buildingType]?.blocksPath) {
-                const d = th.position.distanceTo(obj.position);
-                if (d < 18 && d < tDist) { target = obj; tPos = obj.position; tDist = d; }
+        let target=null, tp=null, td=Infinity;
+        const pd = t.position.distanceTo(playerData.pos);
+        if (pd<td){ td=pd; target='player'; tp=playerData.pos; }
+        // 建筑也吸引威胁
+        scene.traverse(o=>{
+            if (o.userData.build && o.userData.bm && !o.userData.bm.destroyed && (o.userData.bm.blocks || o.userData.bm.trap)){
+                const d = t.position.distanceTo(o.position);
+                if (d<15 && d<td){ td=d; target=o; tp=o.position; }
             }
         });
-
-        if (tPos) {
-            const dir = new THREE.Vector3().subVectors(tPos, th.position).normalize();
-            const speedMul = inLight ? 0.35 : 1;
-            th.position.x += dir.x * ud.speed * speedMul * dt;
-            th.position.z += dir.z * ud.speed * speedMul * dt;
-            th.rotation.y = Math.atan2(dir.x, dir.z);
-
-            if (ud.tentacles) {
-                ud.tentacles.forEach((t, i) => {
-                    t.rotation.x = Math.sin(gameTime*4 + i*Math.PI/3) * 0.3;
-                });
-            }
-            if (ud.eyes) {
-                const flick = 0.7 + Math.sin(gameTime*20 + th.position.x) * 0.3;
-                ud.eyes.forEach(e => { e.material.color.setRGB(flick, 0, 0); });
-            }
-
-            ud.attackTimer -= dt;
-            if (ud.attackTimer <= 0 && tDist < ud.attackRange) {
-                ud.attackTimer = 1 / ud.attackSpeed;
-                if (target === 'player') {
-                    playerData.health -= ud.damage;
-                    showMessage(`受到 ${ud.damage} 伤害！`, 'danger');
-                    showDamageNumber(playerData.pos, ud.damage);
-                    if (playerData.health <= 0) endGame('defeat');
+        if (tp){
+            const dir = new THREE.Vector3().subVectors(tp, t.position).normalize();
+            const spd = inLight ? u.spd*0.4 : u.spd;
+            t.position.x += dir.x*spd*dt;
+            t.position.z += dir.z*spd*dt;
+            t.rotation.y = Math.atan2(dir.x, dir.z);
+            u.atkT -= dt;
+            if (u.atkT<=0 && td<u.range){
+                u.atkT = 1/u.atkSpd;
+                if (target==='player'){
+                    playerData.hp -= u.dmg;
+                    showMsg(`受到 ${u.dmg} 伤害！`,'warn');
                 } else {
-                    target.userData.hp -= ud.damage;
-                    if (target.userData.hp <= 0) {
-                        target.userData.destroyed = true;
-                        showMessage(`${BUILDINGS[target.userData.buildingType].name} 被摧毁！`, 'danger');
+                    target.userData.bm.hp -= u.dmg;
+                    if (target.userData.bm.hp<=0){
+                        target.userData.bm.destroyed = true;
                         scene.remove(target);
-                        const c = getCellAt(target.position.x, target.position.z);
-                        if (c) c.building = null;
+                        const c = getCell(target.position.x, target.position.z);
+                        if (c) c.building=null;
+                        showMsg('建筑被摧毁！','warn');
                         updateLighting();
                     }
                 }
             }
         }
     }
-    threats = threats.filter(t => !toRemove.includes(t));
-    toRemove.forEach(t => { scene.remove(t); const c = getCellAt(t.position.x, t.position.z); if (c) c.threat = null; });
-}
 
-function updateTurrets(dt) {
-    scene.traverse(obj => {
-        if (obj.userData.isBuilding && obj.userData.buildingType === 'cannon' && !obj.userData.destroyed) {
-            obj.userData.attackTimer = (obj.userData.attackTimer || 0) + dt;
-            if (obj.userData.attackTimer > 1 / BUILDINGS.cannon.attackSpeed) {
-                let target = null, targetDist = BUILDINGS.cannon.attackRange;
-                for (const th of threats) {
-                    if (th.userData.hp <= 0) continue;
-                    const d = obj.position.distanceTo(th.position);
-                    if (d < targetDist) { target = th; targetDist = d; }
+    // 炮台
+    scene.traverse(o=>{
+        if (o.userData.build && o.userData.bm && o.userData.bm.atk && !o.userData.bm.destroyed){
+            o.userData.bm.atkT += dt;
+            const b = o.userData.bm;
+            if (b.atkT > 1/b.spd){
+                let target=null, td=b.range;
+                for (const t of threats){
+                    if (t.userData.hp<=0) continue;
+                    const d = o.position.distanceTo(t.position);
+                    if (d<td){ td=d; target=t; }
                 }
-                if (target) {
-                    const dx = target.position.x - obj.position.x;
-                    const dz = target.position.z - obj.position.z;
-                    if (obj.userData.turret) obj.userData.turret.rotation.y = Math.atan2(dx, dz);
-                    obj.userData.attackTimer = 0;
-                    shootProjectile(obj, target);
+                if (target){
+                    if (o.userData.tur){
+                        const dx=target.position.x-o.position.x, dz=target.position.z-o.position.z;
+                        o.userData.tur.rotation.y = Math.atan2(dx,dz);
+                    }
+                    // 发射
+                    const p = new THREE.Mesh(new THREE.SphereGeometry(.12,8,8), new THREE.MeshBasicMaterial({color:0xff6622}));
+                    p.position.set(o.position.x, .8, o.position.z);
+                    const vel = new THREE.Vector3().subVectors(target.position, o.position).normalize().multiplyScalar(28);
+                    p.userData = { vel, life:0, dmg:b.dmg };
+                    scene.add(p);
+                    projectiles.push(p);
+                    b.atkT = 0;
                 }
             }
-        }
-        if (obj.userData.isBuilding && obj.userData.buildingType === 'workshop' && obj.userData.gears) {
-            obj.userData.gears.children.forEach((g, i) => { g.rotation.x += dt * 2 * (1 - i*0.2); });
         }
     });
 
-    const toRemove = [];
-    for (const p of projectiles) {
-        p.life += dt;
-        p.position.add(p.velocity.clone().multiplyScalar(dt));
-        for (const th of threats) {
-            if (th.userData.hp <= 0) continue;
-            if (p.position.distanceTo(th.position) < 1.2) {
-                th.userData.hp -= p.damage;
-                showDamageNumber(th.position, p.damage);
-                toRemove.push(p);
-                break;
+    // 投射物
+    for (let i=projectiles.length-1; i>=0; i--){
+        const p = projectiles[i];
+        p.position.add(p.userData.vel.clone().multiplyScalar(dt));
+        p.userData.life += dt;
+        let hit=false;
+        for (const t of threats){
+            if (t.userData.hp<=0) continue;
+            if (p.position.distanceTo(t.position)<1.2){
+                t.userData.hp -= p.userData.dmg;
+                hit=true; break;
             }
         }
-        if (p.life > 3) toRemove.push(p);
-    }
-    projectiles = projectiles.filter(p => !toRemove.includes(p));
-    toRemove.forEach(p => scene.remove(p));
-}
-
-function shootProjectile(from, target) {
-    const proj = new THREE.Mesh(
-        new THREE.SphereGeometry(0.12, 8, 8),
-        new THREE.MeshBasicMaterial({ color: 0xff6622 })
-    );
-    proj.position.set(from.position.x, 0.8, from.position.z);
-    const dir = new THREE.Vector3().subVectors(target.position, from.position).normalize();
-    proj.velocity = dir.multiplyScalar(30);
-    proj.damage = BUILDINGS.cannon.damage;
-    proj.life = 0;
-    scene.add(proj);
-    projectiles.push(proj);
-}
-
-function updatePlayerStats(dt) {
-    playerData.hunger -= CONFIG.HUNGER_RATE * dt;
-    if (playerData.hunger < 0) playerData.hunger = 0;
-    if (playerData.hunger <= 0) playerData.health -= CONFIG.HEALTH_DAMAGE_RATE * dt;
-
-    // 自动吃
-    if (playerData.hunger < 70 && playerData.resources.food > 0 && gameTime - (playerData.lastEatTime || 0) > 4) {
-        playerData.resources.food--;
-        playerData.hunger = Math.min(100, playerData.hunger + 30);
-        playerData.lastEatTime = gameTime;
+        if (hit || p.userData.life>3){
+            scene.remove(p);
+            projectiles.splice(i,1);
+        }
     }
 
-    const cell = getCellAt(playerData.pos.x, playerData.pos.z);
-    if (cell && !cell.lit && isNight) {
-        playerData.sanity -= CONFIG.SANITY_RATE_DARK * dt;
+    // 篝火/火把火焰动画
+    scene.traverse(o=>{
+        if (o.userData.flame){
+            o.userData.flame.scale.y = 1 + Math.sin(gameTime*8)*.15;
+            o.userData.flame.scale.x = 1 + Math.cos(gameTime*10)*.1;
+        }
+        if (o.userData.fireLight){
+            o.userData.fireLight.intensity = 1.5 + Math.sin(gameTime*6)*.3;
+        }
+    });
+
+    // 投放下落 + 自动收集（视野内）
+    for (let i=drops.length-1; i>=0; i--){
+        const d = drops[i];
+        if (d.position.y > d.userData.targetY){
+            d.position.y -= 6*dt;
+            d.rotation.y += dt*2;
+            d.rotation.z += dt*1.5;
+            if (d.position.y <= d.userData.targetY) d.position.y = d.userData.targetY;
+        } else {
+            d.rotation.y += dt*2;
+        }
+        // 视野检查 + 收集
+        const distToPlayer = playerData.pos.distanceTo(d.position);
+        if (distToPlayer < CFG.AUTO_PICKUP_RANGE || isDropInView(d)) {
+            collectDrop(d);
+        }
+    }
+
+    // 记忆碎片旋转 + 靠近拾取
+    for (let i=fragments.length-1; i>=0; i--){
+        const f = fragments[i];
+        f.rotation.y += dt*1.5;
+        f.rotation.x += dt*.8;
+        f.position.y = f.position.y + Math.sin(gameTime*2+i)*dt*0.3;
+        if (playerData.pos.distanceTo(f.position) < 3) collectFragment(f);
+    }
+
+    // 系统定时投放（随机间隔）
+    if (!gameTime._nextSpawn) gameTime._nextSpawn = gameTime + CFG.SPAWN_INTERVAL + Math.random()*3;
+    if (gameTime > gameTime._nextSpawn){
+        rollDrop();
+        gameTime._nextSpawn = gameTime + CFG.SPAWN_INTERVAL + Math.random()*4;
+    }
+
+    // 玩家状态衰减
+    playerData.food -= .35*dt;
+    if (playerData.food<0){ playerData.food=0; playerData.hp -= .6*dt; }
+    const pc = getCell(playerData.pos.x, playerData.pos.z);
+    if (pc && (!pc.lit || night)){
+        playerData.sanity -= (night?0.2:0.1)*dt;
     } else {
-        playerData.sanity += CONFIG.SANITY_RATE_LIGHT * dt;
+        playerData.sanity += 0.05*dt;
     }
+    if (playerData.sanity<20) playerData.hp -= .3*dt;
+    if (playerData.food>30 && playerData.sanity>30 && playerData.hp<100) playerData.hp += 1*dt;
     playerData.sanity = Math.max(0, Math.min(100, playerData.sanity));
-    if (playerData.sanity < 25) playerData.health -= 0.3 * dt;
+    playerData.food = Math.max(0, Math.min(100, playerData.food));
+    if (playerData.hp<=0) endGame('defeat');
 
-    if (playerData.hunger > 40 && playerData.sanity > 40 && playerData.health < 100) {
-        playerData.health += 1.5 * dt;
-    }
-    playerData.health = Math.max(0, Math.min(100, playerData.health));
-    if (playerData.health <= 0) endGame('defeat');
+    updateUI();
+    updateMinimap();
+    renderer.render(scene, camera);
+    requestAnimationFrame(()=>update(dt));
 }
 
-function checkThreatSpawn() {
-    if (gameTime < CONFIG.DAY_THREAT_DELAY) return;
-    if (gameTime % CONFIG.THREAT_SPAWN_INTERVAL < 0.1) {
-        if (Math.random() < CONFIG.THREAT_SPAWN_CHANCE) spawnThreat();
-    }
-}
-
-function updateActionHint(dt) {
-    if (activeHint) {
-        hintTimer -= dt;
-        if (hintTimer <= 0) {
-            activeHint.style.display = 'none';
-            activeHint = null;
-        }
-    }
-
-    // 周期性行动提示（仅在非引导状态）
-    if (!tutorialPhase.active && Math.floor(gameTime) % 15 === 0 && Math.random() < dt) {
-        showProactiveHint();
-    }
-}
-
-function showProactiveHint() {
-    // 检查玩家当前缺什么
-    const hasLight = countBuilt('torch') + countBuilt('lamp') + countBuilt('tower') + countBuilt('workshop') > 0;
-    const hasDefense = countBuilt('cannon') > 0 || countBuilt('wall') > 0;
-
-    if (isNight && !hasLight) {
-        showActionHint('⚠️ 警告：夜晚来临', '你没有任何光源！黑暗中理智会快速下降，威胁即将出没。<br><br>立刻建造火把 🔦（2木材）！', 'danger', 10);
-    } else if (threats.length >= 2 && !hasDefense) {
-        showActionHint('⚠️ 警告：威胁逼近', `当前有 ${threats.length} 个威胁正在靠近你。<br><br>建造石墙 🧱 阻挡，或蒸汽炮台 💣 还击！`, 'danger', 10);
-    } else if (playerData.resources.food <= 1 && playerData.hunger < 50) {
-        showActionHint('⚠️ 食物告急', '你的食物快吃完了，饥饿正在伤害你。<br><br>采集浆果丛，或建造工坊加工木材成食物！', 'danger', 8);
-    } else if (!hasLight) {
-        showActionHint('💡 建议：建造光源', '黑暗中你只能看见脚下。<br><br>建造 🔦火把 / 🏮蒸汽灯 / 🗼照明塔 来驱散迷雾、提前发现威胁！', 'info', 8);
-    } else if (playerData.resources.metal < 3 || playerData.resources.coal < 3) {
-        showActionHint('📦 建议：探索采矿', '你手头的金属或煤炭不足。<br><br>带上光源，去更远的地方探索矿脉！', 'info', 6);
-    }
-}
-
-function countBuilt(type) {
-    let n = 0;
-    scene.traverse(o => { if (o.userData.isBuilding && o.userData.buildingType === type && !o.userData.destroyed) n++; });
-    return n;
-}
-
-function totalBuildingLightRadius() {
-    let r = 0;
-    scene.traverse(o => { if (o.userData.isBuilding && !o.userData.destroyed) r += o.userData.lightRadius || 0; });
-    return r;
-}
-
-function updateHUD() {
-    document.getElementById('healthBar').style.width = playerData.health + '%';
-    document.getElementById('healthText').textContent = Math.round(playerData.health);
-    document.getElementById('hungerBar').style.width = playerData.hunger + '%';
-    document.getElementById('hungerText').textContent = Math.round(playerData.hunger);
-    document.getElementById('sanityBar').style.width = playerData.sanity + '%';
-    document.getElementById('sanityText').textContent = Math.round(playerData.sanity);
-
-    const rp = document.getElementById('resourcePanel');
-    rp.innerHTML = '';
-    const resList = ['wood', 'stone', 'metal', 'coal', 'food'];
-    for (const r of resList) {
-        const el = document.createElement('div');
-        el.className = 'resource-item';
-        const col = { wood:'#8b6914', stone:'#666', metal:'#c9a961', coal:'#4a8aca', food:'#c94a4a' }[r];
-        el.innerHTML = `<span style="display:inline-block;width:14px;height:14px;margin-right:4px;background:${col};vertical-align:middle;border:1px solid #c9a961"></span>${RESOURCE_NAMES[r]} <b>${playerData.resources[r]}</b>`;
-        // 如果引导阶段需要这个资源且不够，标红
-        if (tutorialPhase.active) {
-            const phase = TUTORIAL_PHASES[tutorialPhase.index];
-            if (phase && phase.id === 'gather_wood' && r === 'wood' && playerData.resources.wood < 4) el.classList.add('low');
-            if (phase && phase.id === 'gather_more' && r !== 'food' && playerData.resources[r] < (r==='metal'?6:r==='stone'?4:4)) el.classList.add('low');
-        }
-        rp.appendChild(el);
-    }
-
-    // 建造进度
-    const pb = document.getElementById('progressBar');
-    if (buildQueue.length > 0) {
-        const b = buildQueue[0];
-        const frac = b.progress / b.total;
-        pb.style.display = 'block';
-        document.getElementById('progressLabel').textContent = `建造 ${BUILDINGS[b.type].name}`;
-        document.getElementById('progressInner').style.width = (frac*100) + '%';
-        document.getElementById('progressText').textContent = Math.round(frac*100) + '%';
-    } else pb.style.display = 'none';
-
-    updateBuildUI();
-}
-
-function updateMinimap() {
-    const canvas = document.getElementById('minimapCanvas');
-    const ctx = canvas.getContext('2d');
-    const size = CONFIG.MAP_SIZE;
-    const cs = canvas.width / size;
-
-    ctx.fillStyle = '#0a0603';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    for (let x = 0; x < size; x++) {
-        for (let z = 0; z < size; z++) {
-            const c = mapCells[x][z];
-            const px = x*cs, py = z*cs;
-            if (c.lit) {
-                const col = { grass:'#4a5a35', dirt:'#6a5a35', stone:'#8a8a8a', water:'#3a6a7a', sand:'#8a7a4a', ruins:'#5a4530' };
-                ctx.fillStyle = col[c.terrain] || '#555';
-                ctx.fillRect(px, py, cs+1, cs+1);
-                if (c.building && !c.building.userData.destroyed) {
-                    ctx.fillStyle = '#ffdd66';
-                    ctx.fillRect(px+cs/4, py+cs/4, cs/2, cs/2);
-                }
-                if (c.threat && c.threat.userData.hp > 0) {
-                    ctx.fillStyle = '#ff3333';
-                    ctx.fillRect(px+cs/3, py+cs/3, cs/3, cs/3);
-                }
-            } else if (c.revealed) {
-                ctx.fillStyle = '#1e1812';
-                ctx.fillRect(px, py, cs+1, cs+1);
-            }
-        }
-    }
-    const px = (size/2 + playerData.pos.x / CONFIG.CELL_SIZE) * cs;
-    const py = (size/2 + playerData.pos.z / CONFIG.CELL_SIZE) * cs;
-    ctx.fillStyle = '#ffaa33';
-    ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI*2); ctx.fill();
-    ctx.strokeStyle = '#ffdd66'; ctx.lineWidth = 1.5; ctx.stroke();
-}
-
-// =================== 游戏控制 ===================
-function startGame() {
-    // 移动端允许 touchstart 也能触发开始
-    const startHandler = () => {
-        document.getElementById('startScreen').style.display = 'none';
-        gameState = 'playing';
-        showMessage('蒸汽时代的黎明尚未到来...', 'tutorial');
-        if (IS_MOBILE) {
-            setTimeout(() => showMessage('👆 左下摇杆移动 · 右下按钮攻击/交互', 'info'), 500);
-            setTimeout(() => showMessage('👆 画面 tap 放置建筑，🔨 按钮切换建筑类型', 'info'), 2500);
-        }
-        setTimeout(startTutorial, IS_MOBILE ? 3000 : 1500);
-
-        document.getElementById('tutorialSkip').addEventListener('click', () => {
-            tutorialPhase.active = false;
-            document.getElementById('tutorialPanel').classList.add('hidden');
-            showMessage('跳过引导，自由游戏！', 'info');
-        });
-    };
-    document.getElementById('startScreen').addEventListener('click', startHandler);
-    document.getElementById('startScreen').addEventListener('touchstart', startHandler, { once: true });
+// 投放物是否在玩家视野内
+function isDropInView(d){
+    const v = d.position.clone().project(camera);
+    return v.z < 1 && v.x > -1 && v.x < 1 && v.y > -1 && v.y < 1;
 }
 
 function endGame(result) {
     gameState = result;
-    const screen = document.getElementById('endScreen');
-    document.getElementById('endTitle').textContent = result === 'victory' ? '黎明降临' : '黑暗吞噬';
-    document.getElementById('endTitle').className = 'end-title ' + (result === 'victory' ? 'victory' : 'defeat');
-
-    const size = CONFIG.MAP_SIZE;
-    let lit = 0, total = 0;
-    for (let x = 0; x < size; x++) for (let z = 0; z < size; z++) {
-        if (mapCells[x][z].terrain !== 'water') { total++; if (mapCells[x][z].lit) lit++; }
+    const sc = document.getElementById('vicScreen');
+    sc.classList.add('show');
+    const stats = document.getElementById('vicStats');
+    if (result === 'victory'){
+        const days = Math.floor(gameTime / CFG.DAY_LEN) + 1;
+        const built = scene.children.filter(o=>o.userData.build && !o.userData.bm?.destroyed).length;
+        stats.innerHTML = `在沙箱 ${sandboxId} 中生存了 ${days} 天<br>建造: ${built} 座设施 | 收集: ${memoryPieces.length} 记忆碎片`;
+    } else {
+        document.querySelector('#vicScreen .victory-title').textContent = '意识湮灭';
+        document.querySelector('#vicScreen .victory-title').className = 'victory-title defeat';
+        document.querySelector('#vicScreen .victory-text').innerHTML = `你的意识在沙箱中消散。<br>直播仍在继续——<br>只是屏幕上的人换了一个。`;
+        const days = Math.floor(gameTime / CFG.DAY_LEN) + 1;
+        stats.innerHTML = `沙箱 ${sandboxId} | 存活 ${days} 天 | 碎片 ${memoryPieces.length}/5`;
     }
-
-    document.getElementById('endStats').innerHTML = `
-        存活天数：${dayCount}<br>
-        点亮区域：${Math.round(lit/total*100)}%<br>
-        建造建筑：${scene.children.filter(o => o.userData?.isBuilding && !o.userData.destroyed).length}<br>
-        击败威胁：—<br>
-        剩余资源：${Object.values(playerData.resources).reduce((a,b)=>a+b, 0)}
-    `;
-    screen.style.display = 'flex';
 }
 
-function animate() {
-    requestAnimationFrame(animate);
-    const dt = Math.min(0.1, clock.getDelta());
-    update(dt);
-    renderer.render(scene, camera);
-}
-
-init();
+// ================== 启动 ==================
+requestAnimationFrame(()=>{
+    clock = new THREE.Clock();
+    init();
+});
 </script>
 </body>
 </html>
