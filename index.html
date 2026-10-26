@@ -578,8 +578,8 @@ function rebuildWorldNow() {
 
     // 摄像机初始对齐玩家出生点（不再固定 (0,20,14)）
     if (camera) {
-        camera.position.set(playerData.pos.x, 17, playerData.pos.z + 12);
-        camera.lookAt(playerData.pos.x, 1, playerData.pos.z);
+        camera.position.set(playerData.pos.x + 10, playerData.pos.y + 16, playerData.pos.z + 10);
+        camera.lookAt(playerData.pos.x, playerData.pos.y + 1, playerData.pos.z);
     }
 }
 
@@ -625,11 +625,11 @@ function showMemoryIntro() { /* 已移除 */ }
 function init() {
     clock = new THREE.Clock();
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0603);
-    scene.fog = new THREE.FogExp2(0x0a0603, 0.04);
+    scene.background = new THREE.Color(0x1a1410);
+    // scene.fog = new THREE.FogExp2(0x0a0603, 0.04); // 已禁用迷雾
 
     camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 500);
-    camera.position.set(0, 20, 14);
+    camera.position.set(10, 16, 10);
 
     try {
         renderer = new THREE.WebGLRenderer({ antialias:!IS_MOBILE, powerPreference:IS_MOBILE?'low-power':'high-performance' });
@@ -672,8 +672,8 @@ function init() {
     revealArea(playerData.pos, 8);
 
     // 摄像机初始对齐玩家出生点
-    camera.position.set(playerData.pos.x, 17, playerData.pos.z + 12);
-    camera.lookAt(playerData.pos.x, 1, playerData.pos.z);
+    camera.position.set(playerData.pos.x + 10, playerData.pos.y + 16, playerData.pos.z + 10);
+    camera.lookAt(playerData.pos.x, playerData.pos.y + 1, playerData.pos.z);
 
     // 事件
     window.addEventListener('resize', onResize);
@@ -749,20 +749,8 @@ function buildWorld(cached) {
             // 下面会走 seed 生成
         } else {
             cells._spawn = cached.spawn || {x:Math.floor(mapSize/2), z:Math.floor(mapSize/2)};
-            // 重新创建 fog（cached 分支也要）
-            if (scene.userData.fogX) {
-                scene.traverse(o => { if (o.material && o.material.map === scene.userData.fogT) { scene.remove(o); } });
-            }
-            const fogC = document.createElement('canvas'); fogC.width=256; fogC.height=256;
-            const fogX = fogC.getContext('2d'); fogX.fillStyle='#000'; fogX.fillRect(0,0,256,256);
-            const fogT = new THREE.CanvasTexture(fogC);
-            const fogM = new THREE.MeshBasicMaterial({ map:fogT, transparent:true, depthWrite:false, side:THREE.DoubleSide });
-            const fogG = new THREE.PlaneGeometry(mapSize*cellSize+4, mapSize*cellSize+4);
-            const fog = new THREE.Mesh(fogG, fogM); fog.rotation.x = -Math.PI/2; fog.position.y = 5;
-            scene.add(fog);
-            scene.userData.fogX = fogX;
-            scene.userData.fogT = fogT;
-            return; // ✅ 完成，跳过下面的 seed 生成
+            // 迷雾已禁用：直接 return，不再创建 fog plane
+            return;
         }
     } else {
         // —— B. 种子生成（首次 / 权重变了）——
@@ -854,16 +842,6 @@ function buildWorld(cached) {
         });
     }
 
-    // 迷雾
-    const fogC = document.createElement('canvas'); fogC.width=256; fogC.height=256;
-    const fogX = fogC.getContext('2d'); fogX.fillStyle='#000'; fogX.fillRect(0,0,256,256);
-    const fogT = new THREE.CanvasTexture(fogC);
-    const fogM = new THREE.MeshBasicMaterial({ map:fogT, transparent:true, depthWrite:false, side:THREE.DoubleSide });
-    const fogG = new THREE.PlaneGeometry(mapSize*cellSize+4, mapSize*cellSize+4);
-    const fog = new THREE.Mesh(fogG, fogM); fog.rotation.x = -Math.PI/2; fog.position.y = 5;
-    scene.add(fog);
-    scene.userData.fogX = fogX;
-    scene.userData.fogT = fogT;
 }
 
 // 颜色插值（hex → 过渡 → hex）
@@ -1832,11 +1810,16 @@ function animate() {
         });
     }
 
-    // 相机跟随
+    // 饥荒式摄像机：固定 45° 俯角，玩家永远在屏幕中心
     if (camera) {
-        const camTarget = new THREE.Vector3(playerData.pos.x, 17, playerData.pos.z + 12);
-        camera.position.lerp(camTarget, 0.04);
-        camera.lookAt(playerData.pos.x, 1, playerData.pos.z);
+        const offset = new THREE.Vector3(10, 16, 10);
+        const target = new THREE.Vector3(
+            playerData.pos.x + offset.x,
+            playerData.pos.y + offset.y,
+            playerData.pos.z + offset.z
+        );
+        camera.position.lerp(target, 0.08);
+        camera.lookAt(playerData.pos.x, playerData.pos.y + 1, playerData.pos.z);
     }
 
     // 建造进度
