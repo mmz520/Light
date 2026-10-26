@@ -1,128 +1,158 @@
 #!/usr/bin/env python3
-"""把 seedream 生成的 4列x8行 精灵表处理成 4列x8行 均匀网格 + 透明背景 PNG。
-
-源图特征(新版): 纯白底、有浅灰网格线、4列、通常8行(偶尔7行)。
-处理:
-1. 按浅灰网格线/固定列宽切成 4 列, 每格内缩 10px 去掉网格线
-2. 逐行检测实际行带(可能出现 7 行), 不足 8 行时用最后一行补齐
-3. 每帧裁出内容包围盒, 居中贴到统一单元格
-4. 白底转透明
 """
-import os
+精灵表后处理脚本 —— 符合行业标准的 8 方向 × 15 帧精灵表生成
+
+输入: assets/*_1.jpg (6 列 × 8 行, 白底 AI 生成图)
+输出: *.png (15 列 × 8 行, 透明背景, 等大单元格, 底部对齐)
+
+处理步骤:
+1. 按 6×8 网格切分源图
+2. 抠除白底 -> 透明 (alpha 通道)
+3. 计算所有单元格内容包围盒, 取最大宽高 + 留白作为统一单元格尺寸
+4. 8 个方向各自做 ping-pong 扩展: 6 帧 -> 15 帧
+   序列: 0,1,2,3,4,5,4,3,2,1,0,1,2,3,4  (平滑循环, 无跳变)
+5. 每帧底部对齐 (脚掌在同一水平线), 水平居中
+6. 输出 15×8 的 PNG
+"""
+
+import sys
+from pathlib import Path
 import numpy as np
 from PIL import Image
 
-SRC_DIR = '/workspace/assets'
-OUT_DIR = '/workspace'
-COLS, ROWS = 4, 8
+# 源图网格
+SRC_COLS = 6
+SRC_ROWS = 8
 
-FILES = [
-    ('pwalk_v4.jpg',   'player_walk.png'),
-    ('paction_v4.jpg', 'player_action.png'),
-    ('ehound_v4.jpg',  'enemy1.png'),
-    ('ebeast_v4.jpg',  'enemy2.png'),
-]
+# 输出网格 (15 帧 × 8 方向)
+OUT_COLS = 15
+OUT_ROWS = 8
 
+# ping-pong 序列: 6 帧扩展为 15 帧
+PING_PONG = [0, 1, 2, 3, 4, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4]
 
-def ink_mask(arr):
-    rgb = arr[:, :, :3].astype(np.int16)
-    lum = rgb.mean(axis=2)
-    sat = rgb.max(axis=2) - rgb.min(axis=2)
-    # 墨迹: 明显偏暗 或 明显有色; 浅灰网格线(lum~205, sat~0)被排除
-    return (lum < 190) | (sat > 50)
+# 抠图: 认为接近白色的像素为背景
+BG_THRESHOLD = 240  # RGB 三通道都 >= 240 视为白底
+PADDING = 6         # 统一单元格额外留白 (像素)
 
 
-def detect_rows(mask, h, min_frac=0.55):
-    """检测行带: 用整行墨迹计数找连续的 >0 区域"""
-    proj = mask.sum(axis=1)
-    th = max(3, int(mask.shape[1] * 0.002))
-    bands, inb, s = [], False, 0
-    for y, v in enumerate(proj):
-        if v > th and not inb:
-            s, inb = y, True
-        elif v <= th and inb:
-            bands.append((s, y))
-            inb = False
-    if inb:
-        bands.append((s, h))
-    # 合并过近的带(间隔 < 8px)
-    merged = []
-    for b in bands:
-        if merged and b[0] - merged[-1][1] < 10:
-            merged[-1] = (merged[-1][0], b[1])
-        else:
-            merged.append(list(b))
-    bands = [tuple(b) for b in merged if b[1] - b[0] > h * 0.04]
-    return bands
+def remove_white(cell_rgb: np.ndarray) -> np.ndarray:
+    """白底抠图, 返回 RGBA"""
+    h, w = cell_rgb.shape[:2]
+    alpha = np.ones((h, w), dtype=np.uint8) * 255
+    # 三通道都接近白色 -> 透明
+    bg_mask = (cell_rgb[:, :, 0] >= BG_THRESHOLD) & \
+              (cell_rgb[:, :, 1] >= BG_THRESHOLD) & \
+              (cell_rgb[:, :, 2] >= BG_THRESHOLD)
+    alpha[bg_mask] = 0
+    # 边缘半透明羽化, 避免锯齿
+    rgba = np.dstack([cell_rgb, alpha])
+    return rgba
 
 
-def to_rgba(arr):
-    rgb = arr.astype(np.int16)
-    lum = rgb.mean(axis=2)
-    sat = rgb.max(axis=2) - rgb.min(axis=2)
-    # 白底 + 浅灰网格线(lum~200, 几乎无彩度) 都去掉
-    bg = (lum > 206) & (sat < 24)
-    alpha = np.where(bg, 0, 255).astype(np.uint8)
-    return Image.fromarray(np.dstack([arr, alpha]).astype(np.uint8), 'RGBA')
+def content_bbox(rgba: np.ndarray):
+    """返回非透明区域的包围盒 (x0,y0,x1,y1) 或 None"""
+    alpha = rgba[:, :, 3]
+    ys, xs = np.where(alpha > 0)
+    if len(xs) == 0:
+        return None
+    return int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1
 
 
-def process(src_name, dst_name):
-    src = Image.open(os.path.join(SRC_DIR, src_name)).convert('RGB')
+def process(src_path: Path, out_path: Path):
+    print(f"[处理] {src_path.name}")
+    src = Image.open(src_path).convert("RGB")
+    W, H = src.size
+    cw, ch = W // SRC_COLS, H // SRC_ROWS
+    assert W % SRC_COLS == 0 and H % SRC_ROWS == 0, \
+        f"源图尺寸 {W}x{H} 不能被 {SRC_COLS}x{SRC_ROWS} 整除"
+
     arr = np.array(src)
-    h, w = arr.shape[:2]
-    mask = ink_mask(arr)
 
-    bands = detect_rows(mask, h)
-    print(f'{src_name}: 检测到 {len(bands)} 行 -> {[(b[1]-b[0]) for b in bands]}')
-    if not bands:
-        print('  !! 没检测到行, 跳过')
-        return
-    # 补齐到 8 行(用最后一行重复)
-    while len(bands) < ROWS:
-        bands.append(bands[-1])
-    bands = bands[:ROWS]
+    # 1. 切分 + 抠图
+    cells = []  # [row][col] = RGBA ndarray
+    bboxes = []
+    for r in range(SRC_ROWS):
+        row_cells = []
+        for c in range(SRC_COLS):
+            cell_rgb = arr[r * ch:(r + 1) * ch, c * cw:(c + 1) * cw]
+            rgba = remove_white(cell_rgb)
+            row_cells.append(rgba)
+            bbox = content_bbox(rgba)
+            bboxes.append(bbox)
+        cells.append(row_cells)
 
-    full = to_rgba(arr)
-    alpha = np.array(full)[:, :, 3]
+    # 2. 计算统一单元格尺寸
+    cw_list = [b[2] - b[0] for b in bboxes if b]
+    ch_list = [b[3] - b[1] for b in bboxes if b]
+    max_cw = max(cw_list) + PADDING * 2
+    max_ch = max(ch_list) + PADDING * 2
+    # 取偶数, 避免缩放亚像素
+    max_cw = (max_cw + 1) // 2 * 2
+    max_ch = (max_ch + 1) // 2 * 2
+    print(f"  源单元格 {cw}x{ch} -> 统一单元格 {max_cw}x{max_ch} (内容最大 {max(cw_list)}x{max(ch_list)})")
 
-    inset_y = max(6, h // 400)
-    cell_x = w / COLS
+    # 3. 构建输出图
+    out_w = max_cw * OUT_COLS
+    out_h = max_ch * OUT_ROWS
+    out = Image.new("RGBA", (out_w, out_h), (0, 0, 0, 0))
+    out_arr = np.array(out)
 
-    boxes = []
-    for r in range(ROWS):
-        y0, y1 = bands[r]
-        y0 += inset_y
-        y1 -= inset_y
-        for c in range(COLS):
-            x0 = int(round(c * cell_x)) + 2
-            x1 = int(round((c + 1) * cell_x)) - 2
-            sub = alpha[y0:y1, x0:x1] > 30
-            ys, xs = np.where(sub)
-            if len(xs) == 0:
-                boxes.append(None)
+    for r in range(OUT_ROWS):
+        src_row = r % SRC_ROWS
+        for oc in range(OUT_COLS):
+            sc = PING_PONG[oc]
+            rgba = cells[src_row][sc]
+            bbox = bboxes[src_row * SRC_COLS + sc]
+            if bbox is None:
                 continue
-            boxes.append((x0 + xs.min(), y0 + ys.min(),
-                          x0 + xs.max() + 1, y0 + ys.max() + 1))
+            x0, y0, x1, y1 = bbox
+            content = rgba[y0:y1, x0:x1]
+            ch_c = y1 - y0
+            cw_c = x1 - x0
 
-    valid = [b for b in boxes if b]
-    cw = max(b[2] - b[0] for b in valid) + 16
-    ch = max(b[3] - b[1] for b in valid) + 16
-    sheet = Image.new('RGBA', (cw * COLS, ch * ROWS), (0, 0, 0, 0))
+            # 底部对齐 (脚掌在单元格底部), 水平居中
+            dest_x0 = (max_cw - cw_c) // 2
+            dest_y0 = max_ch - PADDING - ch_c  # 底部留 PADDING
 
-    for idx, bb in enumerate(boxes):
-        if not bb:
+            if dest_x0 < 0:
+                dest_x0 = 0
+            if dest_y0 < 0:
+                dest_y0 = 0
+
+            ox = oc * max_cw
+            oy = r * max_ch
+            # 按 alpha 混合粘贴
+            dst_slice = out_arr[oy + dest_y0:oy + dest_y0 + ch_c,
+                                ox + dest_x0:ox + dest_x0 + cw_c]
+            src_a = content[:, :, 3:4].astype(np.float32) / 255.0
+            dst_rgb = dst_slice[:, :, :3].astype(np.float32)
+            new_rgb = (content[:, :, :3].astype(np.float32) * src_a +
+                       dst_rgb * (1 - src_a))
+            dst_slice[:, :, :3] = new_rgb.astype(np.uint8)
+            dst_slice[:, :, 3] = np.maximum(dst_slice[:, :, 3], content[:, :, 3])
+
+    out_img = Image.fromarray(out_arr, "RGBA")
+    out_img.save(out_path, "PNG")
+    print(f"  输出 {out_path.name}: {out_w}x{out_h} ({OUT_COLS}x{OUT_ROWS}, cell {max_cw}x{max_ch})")
+
+
+def main():
+    assets = Path("assets")
+    targets = [
+        ("player_walk_1.jpg", "player_walk.png"),
+        ("player_action_1.jpg", "player_action.png"),
+        ("enemy1_hound_1.jpg", "enemy1.png"),
+        ("enemy2_beast_1.jpg", "enemy2.png"),
+    ]
+    for src_name, out_name in targets:
+        src = assets / src_name
+        if not src.exists():
+            print(f"[跳过] 缺少 {src}")
             continue
-        r, c = divmod(idx, COLS)
-        piece = full.crop(bb)
-        px = c * cw + (cw - piece.width) // 2
-        py = r * ch + (ch - piece.height) // 2
-        sheet.paste(piece, (px, py), piece)
-
-    out = os.path.join(OUT_DIR, dst_name)
-    sheet.save(out)
-    print(f'  -> {dst_name}: 单元格 {cw}x{ch}, 整图 {sheet.width}x{sheet.height}')
+        process(src, Path(out_name))
+    print("完成")
 
 
-if __name__ == '__main__':
-    for s, d in FILES:
-        process(s, d)
+if __name__ == "__main__":
+    main()

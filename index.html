@@ -330,11 +330,11 @@ const CFG = {
     VICTORY_FRAGMENTS: 5
 };
 
-// ===== 精灵表配置 (4列 × 8行, 8个方向) =====
+// ===== 精灵表配置 (15列 × 8行, 8个方向 × 15帧) =====
 const SPRITE = {
-    player: { walk:'player_walk.png',  cols:4, rows:8, scaleY:1.4, action:'player_action.png', colsA:4, rowsA:8 },
-    hound:  { walk:'enemy1.png',       cols:4, rows:8, scaleY:1.2 },
-    beast:  { walk:'enemy2.png',       cols:4, rows:8, scaleY:1.6 }
+    player: { walk:'player_walk.png',  cols:15, rows:8, scaleY:1.4, action:'player_action.png', colsA:15, rowsA:8 },
+    hound:  { walk:'enemy1.png',       cols:15, rows:8, scaleY:1.2 },
+    beast:  { walk:'enemy2.png',       cols:15, rows:8, scaleY:1.6 }
 };
 
 // 精灵贴图缓存
@@ -742,7 +742,7 @@ function createFallbackRenderer() {
                 }
             } else if (it.kind === 'threat') {
                 const o = it.o, u = o.userData;
-                const cfg = SPRITE[u.typeKey] || { cols: 4, rows: 8 };
+                const cfg = SPRITE[u.typeKey] || { cols: 15, rows: 8 };
                 const x = pX(o.position.x), y = pY(o.position.z, 0);
                 shadowAt(x, y, 18);
                 drawFrame(u.mat.map, cfg.cols, cfg.rows, u.frameIdx, u.dirIdx,
@@ -1816,6 +1816,20 @@ function setupMobile() {
     mobBtns.classList.add('active');
     document.body.classList.add('is-mobile');
 
+    // 把摇杆/攻击按钮定位到底部工具栏之上，避免重叠
+    const bottomBar = document.querySelector('.bottom-bar');
+    function repositionControls() {
+        const h = bottomBar ? bottomBar.offsetHeight : 160;
+        const gap = 16;
+        joy.style.bottom = (h + gap) + 'px';
+        mobBtns.style.bottom = (h + gap) + 'px';
+    }
+    repositionControls();
+    if (window.ResizeObserver && bottomBar) {
+        new ResizeObserver(repositionControls).observe(bottomBar);
+    }
+    window.addEventListener('resize', repositionControls);
+
     const MAX_R = 50;
     let pid = null;
 
@@ -2055,14 +2069,11 @@ function animate() {
                     sp.mat.needsUpdate = true;
                 }
                 if (sp.isWalking) {
-                    const WALK_FPS = 8;
-                    const walkSeq = [0, 1, 2, 3];
-                    sp.frameIdx = walkSeq[Math.floor(sp.frameTime * WALK_FPS) % walkSeq.length];
+                    const WALK_FPS = 10;
+                    sp.frameIdx = Math.floor(sp.frameTime * WALK_FPS) % sp.cols;
                 } else {
-                    // 待机
-                    const IDLE_FPS = 1.2;
-                    const idleSeq = [0, 0, 1, 1];
-                    sp.frameIdx = idleSeq[Math.floor(sp.frameTime * IDLE_FPS) % idleSeq.length];
+                    // 待机: 停在第 0 帧 (空闲姿态)
+                    sp.frameIdx = 0;
                 }
                 updateSpriteUV(sp, sp.mat.map, sp.cols, sp.rows, sp.frameIdx, sp.dirIdx);
             }
