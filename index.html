@@ -176,9 +176,11 @@ canvas{display:block;touch-action:none}
 }
 
 @supports (padding:max(0px)){
-    .joystick{left:max(16px,env(safe-area-inset-left));bottom:max(16px,calc(env(safe-area-inset-bottom)+60px))}
-    .mob-btns{right:max(16px,env(safe-area-inset-right));bottom:max(120px,calc(env(safe-area-inset-bottom)+100px))}
-    .bottom-bar{padding-bottom:max(14px,env(safe-area-inset-bottom))}
+    /* 注意：env() 必须带兜底值，否则某些浏览器会把它当作非法值，导致 bottom 回退成 auto，
+       控件被顶到页面左上角（之前摇杆/按钮跑到顶部就是这个原因） */
+    .joystick{left:calc(16px + env(safe-area-inset-left, 0px));bottom:calc(16px + env(safe-area-inset-bottom, 0px))}
+    .mob-btns{right:calc(16px + env(safe-area-inset-right, 0px));bottom:calc(120px + env(safe-area-inset-bottom, 0px))}
+    .bottom-bar{padding-bottom:calc(14px + env(safe-area-inset-bottom, 0px))}
 }
 </style>
 </head>
@@ -346,6 +348,8 @@ function preloadSprites() {
             tex.magFilter = THREE.NearestFilter;
             tex.minFilter = THREE.NearestFilter;
             tex.generateMipmaps = false;
+            // 正确标记 sRGB，避免画面发灰/发糊
+            if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
             res(tex);
         }, undefined, () => res(null));
     });
@@ -441,7 +445,13 @@ const BUILDINGS = {
 };
 
 // ================== 全局 ==================
-const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|BlackBerry/i.test(navigator.userAgent) || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+// ?mobile=1 可强制启用触屏控件（便于在桌面上验证/给识别不到的手机兜底）
+const FORCE_MOBILE = /[?&]mobile=1/.test(location.search);
+const IS_MOBILE = FORCE_MOBILE
+    || /Android|iPhone|iPad|iPod|Mobile|Opera Mini|BlackBerry/i.test(navigator.userAgent)
+    || ('ontouchstart' in window)
+    || (navigator.maxTouchPoints > 0)
+    || (!!window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
 if (IS_MOBILE) document.body.classList.add('is-mobile');
 
 let scene, camera, renderer, clock;
@@ -638,6 +648,8 @@ function createFallbackRenderer() {
         cv.width = Math.max(1, Math.floor(W * dpr));
         cv.height = Math.max(1, Math.floor(H * dpr));
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        // 精灵图缩小绘制时关闭插值，保持像素清晰（否则会糊）
+        ctx.imageSmoothingEnabled = false;
     }
     applySize();
 
@@ -791,7 +803,7 @@ function createFallbackRenderer() {
         domElement: cv,
         shadowMap: { enabled: false },
         is2D: true,
-        setPixelRatio(v) { dpr = Math.min(v || 1, 2); applySize(); },
+        setPixelRatio(v) { dpr = Math.min(v || 1, 3); applySize(); },
         setSize(w, h) { W = w; H = h; applySize(); },
         render() { draw2D(); }
     };
@@ -808,7 +820,7 @@ async function init() {
 
     try {
         renderer = new THREE.WebGLRenderer({ antialias:!IS_MOBILE, powerPreference:IS_MOBILE?'low-power':'high-performance' });
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_MOBILE?1.5:2));
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 3));
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.shadowMap.enabled = !IS_MOBILE;
         renderer.shadowMap.type = IS_MOBILE ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
@@ -1087,7 +1099,7 @@ function createPlayer() {
     // 按单元格真实宽高比缩放, 避免拉伸变形
     const imgP = finalWalkTex && finalWalkTex.image;
     const aspP = imgP ? (imgP.width / SPRITE.player.cols) / (imgP.height / SPRITE.player.rows) : 0.88;
-    const pw = 1.25;
+    const pw = 1.45;
     sprite.scale.set(pw, pw / aspP, 1);
     sprite.position.y = 0.9;
     playerGroup.add(sprite);
@@ -1796,39 +1808,92 @@ function updateMinimap() {
 function setupMobile() {
     const joy = document.getElementById('joystick');
     const knob = document.querySelector('#joystick .knob');
+    const mobBtns = document.getElementById('mobBtns');
+    if (!joy || !knob || !mobBtns) return;
 
-    joy.addEventListener('touchstart', e=>{
-        e.preventDefault();
-        const t = e.changedTouches[0];
-        mobile.jid = t.identifier;
-        mobile.jc = {x:t.clientX, y:t.clientY};
-        updateJoy(t.clientX, t.clientY);
-    }, {passive:false});
-    joy.addEventListener('touchmove', e=>{
-        e.preventDefault();
-        for (const t of e.changedTouches)
-            if (t.identifier===mobile.jid) updateJoy(t.clientX, t.clientY);
-    }, {passive:false});
-    const reset = e => {
-        e.preventDefault();
-        for (const t of e.changedTouches)
-            if (t.identifier===mobile.jid){ mobile.jid=null; mobile.move.x=0; mobile.move.y=0; knob.style.transform='translate(-50%,-50%)'; }
-    };
-    joy.addEventListener('touchend', reset, {passive:false});
-    joy.addEventListener('touchcancel', reset, {passive:false});
+    // 之前代码从未给控件加 .active，CSS 里 display:none 一直生效 —— 这就是移动端无法移动/攻击的根因
+    joy.classList.add('active');
+    mobBtns.classList.add('active');
+    document.body.classList.add('is-mobile');
 
-    function updateJoy(x,y){
-        const dx=x-mobile.jc.x, dy=y-mobile.jc.y, max=50;
-        const d = Math.min(Math.sqrt(dx*dx+dy*dy), max);
-        const ang = Math.atan2(dy,dx);
-        const nx = Math.cos(ang)*(d/max), ny = Math.sin(ang)*(d/max);
-        mobile.move.x = nx; mobile.move.y = ny;
-        knob.style.transform = `translate(calc(-50% + ${nx*max}px), calc(-50% + ${ny*max}px))`;
+    const MAX_R = 50;
+    let pid = null;
+
+    function baseCenter() {
+        const r = joy.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }
+    function applyJoy(x, y) {
+        const c = baseCenter();
+        let dx = x - c.x, dy = y - c.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d > MAX_R) { dx = dx / d * MAX_R; dy = dy / d * MAX_R; }
+        const nx = dx / MAX_R, ny = dy / MAX_R;
+        mobile.move.x = nx;
+        mobile.move.y = ny;
+        knob.style.transform = 'translate(calc(-50% + ' + (nx * MAX_R) + 'px), calc(-50% + ' + (ny * MAX_R) + 'px))';
+    }
+    function resetJoy() {
+        pid = null;
+        mobile.jid = null;
+        mobile.move.x = 0;
+        mobile.move.y = 0;
+        knob.style.transform = 'translate(-50%,-50%)';
     }
 
-    document.getElementById('btnAttack').addEventListener('touchstart', e=>{e.preventDefault(); attack();}, {passive:false});
-    document.getElementById('btnPlace').addEventListener('touchstart', e=>{
-        e.preventDefault();
+    if (window.PointerEvent) {
+        // 现代手机统一用 Pointer Events（触屏 + 鼠标都能用）
+        joy.addEventListener('pointerdown', e => {
+            e.preventDefault();
+            pid = e.pointerId;
+            mobile.jid = e.pointerId;
+            try { joy.setPointerCapture(pid); } catch (err) {}
+            applyJoy(e.clientX, e.clientY);
+        }, { passive: false });
+        joy.addEventListener('pointermove', e => {
+            if (e.pointerId !== pid) return;
+            e.preventDefault();
+            applyJoy(e.clientX, e.clientY);
+        }, { passive: false });
+        const end = e => { if (e.pointerId === pid) resetJoy(); };
+        joy.addEventListener('pointerup', end);
+        joy.addEventListener('pointercancel', end);
+        joy.addEventListener('lostpointercapture', end);
+    } else {
+        // 旧设备回退到 touch 事件
+        joy.addEventListener('touchstart', e => {
+            e.preventDefault();
+            const t = e.changedTouches[0];
+            pid = t.identifier;
+            mobile.jid = t.identifier;
+            applyJoy(t.clientX, t.clientY);
+        }, { passive: false });
+        joy.addEventListener('touchmove', e => {
+            e.preventDefault();
+            for (const t of e.changedTouches)
+                if (t.identifier === pid) applyJoy(t.clientX, t.clientY);
+        }, { passive: false });
+        const reset = e => {
+            e.preventDefault();
+            for (const t of e.changedTouches)
+                if (t.identifier === pid) resetJoy();
+        };
+        joy.addEventListener('touchend', reset, { passive: false });
+        joy.addEventListener('touchcancel', reset, { passive: false });
+    }
+
+    function bindTap(el, fn) {
+        if (!el) return;
+        if (window.PointerEvent) {
+            el.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); fn(); }, { passive: false });
+        } else {
+            el.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); fn(); }, { passive: false });
+            el.addEventListener('mousedown', e => { e.preventDefault(); fn(); });
+        }
+    }
+
+    bindTap(document.getElementById('btnAttack'), attack);
+    bindTap(document.getElementById('btnPlace'), () => {
         if (!playerData.currentBuild){
             const seq = ['torch','lantern','wall','spike','cannon','watchtower','workshop','bed'];
             const i = Math.floor(Math.random()*seq.length);
@@ -1839,7 +1904,7 @@ function setupMobile() {
         target.x += Math.cos(playerGroup.rotation.y)*4;
         target.z += Math.sin(playerGroup.rotation.y)*4;
         tryBuild(playerData.currentBuild, target);
-    }, {passive:false});
+    });
 
     // 画面tap放置
     let tStart = null;
