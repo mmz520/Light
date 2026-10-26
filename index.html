@@ -1513,10 +1513,11 @@ function setupMobile() {
 }
 
 // ================== 主循环 ==================
-function update(dt) {
+function animate() {
+    const dt = clock.getDelta();
     if (gameState !== 'playing') {
-        renderer.render(scene, camera);
-        requestAnimationFrame(()=>update(dt));
+        try { renderer.render(scene, camera); } catch(e){}
+        requestAnimationFrame(animate);
         return;
     }
     gameTime += dt;
@@ -1757,7 +1758,7 @@ function update(dt) {
     updateUI();
     updateMinimap();
     renderer.render(scene, camera);
-    requestAnimationFrame(()=>update(dt));
+    requestAnimationFrame(animate);
 }
 
 // 投放物是否在玩家视野内
