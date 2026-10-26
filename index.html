@@ -561,9 +561,13 @@ function rebuildWorldNow() {
 function startOpening() {
     const eye = document.getElementById('eyeOverlay');
     const flash = document.getElementById('dazeFlash');
+    const startScreen = document.getElementById('startScreen');
     document.getElementById('sandboxHud').textContent = sandboxId;
 
-    // 睁眼：屏幕从中间裂开，像眼睛睁开
+    // 1) 开始页立即消失
+    startScreen.style.display = 'none';
+
+    // 2) 睁眼：blink → 快速 open（800ms 完成，不再黑屏等 1.8s）
     eye.style.opacity = '1';
     eye.classList.remove('open');
     eye.classList.add('blink');
@@ -571,19 +575,23 @@ function startOpening() {
     setTimeout(() => {
         eye.classList.remove('blink');
         eye.classList.add('open');
-    }, 400);
+    }, 200);
 
     setTimeout(() => {
-        // 眩晕白闪
+        // 白闪（模拟眩晕睁眼）
         flash.style.opacity = '0.8';
-        setTimeout(() => { flash.style.opacity = '0'; }, 1200);
-    }, 1200);
+    }, 600);
 
     setTimeout(() => {
+        flash.style.opacity = '0';
+    }, 900);
+
+    // 直接进入游戏（只等 1200ms，玩家能看清）
+    setTimeout(() => {
+        eye.style.display = 'none';
         eye.style.opacity = '0';
-        eye.style.transition = 'opacity .4s';
         gameState = 'playing';
-    }, 1800);
+    }, 1200);
 }
 
 function showMemoryIntro() { /* 已移除 */ }
@@ -871,23 +879,124 @@ function getCell(wx,wz) {
 // ================== 玩家 ==================
 function createPlayer() {
     playerGroup = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(.4,.5,1.1,8), new THREE.MeshLambertMaterial({color:0x3a2a1a}));
-    body.position.y=.55; body.castShadow=true; playerGroup.add(body);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(.5,.5,.5), new THREE.MeshLambertMaterial({color:0x8a7a5a}));
-    head.position.y=1.4; head.castShadow=true; playerGroup.add(head);
-    const hat = new THREE.Mesh(new THREE.ConeGeometry(.35,.4,8), new THREE.MeshLambertMaterial({color:0x1a1a1a}));
-    hat.position.y=1.85; playerGroup.add(hat);
-    const goggles = new THREE.Mesh(new THREE.BoxGeometry(.5,.12,.08), new THREE.MeshLambertMaterial({color:0x2a2a2a}));
-    goggles.position.set(0,1.45,.28); playerGroup.add(goggles);
-    const lg = new THREE.Mesh(new THREE.SphereGeometry(.08,8,8), new THREE.MeshBasicMaterial({color:0xff4400}));
+
+    // 脚（黄铜靴）
+    const boots = new THREE.Mesh(
+        new THREE.BoxGeometry(.45, .2, .35),
+        new THREE.MeshStandardMaterial({color:0xb8860b, metalness:.8, roughness:.3})
+    );
+    boots.position.y = .1;
+    playerGroup.add(boots);
+
+    // 身体（帆布夹克 + 黄铜铆钉）
+    const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(.35, .42, 1.0, 10),
+        new THREE.MeshStandardMaterial({color:0x2a4a2a, roughness:.9})
+    );
+    body.position.y = .7;
+    body.castShadow = true;
+    playerGroup.add(body);
+    // 铆钉装饰
+    for (let i=0;i<5;i++) {
+        const rivet = new THREE.Mesh(
+            new THREE.SphereGeometry(.05, 6, 6),
+            new THREE.MeshStandardMaterial({color:0xd4a03a, metalness:.9, roughness:.2})
+        );
+        rivet.position.set(.35 * Math.cos(i*Math.PI*2/5), .3 + i*.15, .35 * Math.sin(i*Math.PI*2/5));
+        playerGroup.add(rivet);
+    }
+
+    // 肩带（亮铜色）
+    const strap = new THREE.Mesh(
+        new THREE.TorusGeometry(.38, .04, 6, 16, Math.PI),
+        new THREE.MeshStandardMaterial({color:0xc8961e, metalness:.8, roughness:.3})
+    );
+    strap.rotation.z = Math.PI/2;
+    strap.position.y = 1.1;
+    playerGroup.add(strap);
+
+    // 头（亮肤色）
+    const head = new THREE.Mesh(
+        new THREE.BoxGeometry(.5, .5, .5),
+        new THREE.MeshStandardMaterial({color:0xf0d89a, roughness:.8})
+    );
+    head.position.y = 1.5;
+    head.castShadow = true;
+    playerGroup.add(head);
+
+    // 蒸汽朋克护目镜（黄铜框架 + 红光玻璃）
+    const goggleFrame = new THREE.Mesh(
+        new THREE.BoxGeometry(.55, .14, .1),
+        new THREE.MeshStandardMaterial({color:0xd4a03a, metalness:.9, roughness:.2})
+    );
+    goggleFrame.position.set(0, 1.52, .28);
+    playerGroup.add(goggleFrame);
+
+    // 左右发光红镜头
+    const lg = new THREE.Mesh(
+        new THREE.CylinderGeometry(.09, .09, .06, 10),
+        new THREE.MeshStandardMaterial({color:0xff2200, emissive:0xff2200, emissiveIntensity:1.2, roughness:.3})
+    );
+    lg.rotation.x = Math.PI/2;
     const rg = lg.clone();
-    lg.position.set(-.11,1.45,.3); rg.position.set(.11,1.45,.3);
-    playerGroup.add(lg,rg);
+    lg.position.set(-.13, 1.52, .33);
+    rg.position.set(.13, 1.52, .33);
+    playerGroup.add(lg, rg);
+
+    // 护目镜光（照亮玩家周围）
+    const goggleLight = new THREE.PointLight(0xff4422, 0.6, 3);
+    goggleLight.position.set(0, 1.52, .4);
+    playerGroup.add(goggleLight);
+
+    // 高筒帽（亮黄铜色 + 黑色帽顶）
+    const hatBand = new THREE.Mesh(
+        new THREE.CylinderGeometry(.32, .34, .12, 10),
+        new THREE.MeshStandardMaterial({color:0xd4a03a, metalness:.8, roughness:.3})
+    );
+    hatBand.position.y = 1.78;
+    playerGroup.add(hatBand);
+    const hatTop = new THREE.Mesh(
+        new THREE.CylinderGeometry(.28, .28, .35, 10),
+        new THREE.MeshStandardMaterial({color:0x1a1a1a, roughness:.9})
+    );
+    hatTop.position.y = 2.0;
+    playerGroup.add(hatTop);
+
+    // 头顶悬浮标识（发光蓝球 —— 让玩家一眼能找到！）
+    const markerGeo = new THREE.IcosahedronGeometry(.22, 0);
+    const markerMat = new THREE.MeshStandardMaterial({
+        color:0x66ccff, emissive:0x44aaff, emissiveIntensity:1.5, metalness:.4, roughness:.2
+    });
+    const marker = new THREE.Mesh(markerGeo, markerMat);
+    marker.position.set(0, 3.0, 0);
+    marker.userData.isPlayerMarker = true;
+    playerGroup.add(marker);
+
+    // 标识的光柱（淡蓝色向下延伸）
+    const pillarGeo = new THREE.CylinderGeometry(.18, .5, 3, 8, 1, true);
+    const pillarMat = new THREE.MeshBasicMaterial({
+        color:0x44aaff, transparent:true, opacity:.15, side:THREE.DoubleSide, depthWrite:false
+    });
+    const pillar = new THREE.Mesh(pillarGeo, pillarMat);
+    pillar.position.set(0, 1.5, 0);
+    playerGroup.add(pillar);
+
+    // 脚下发光圆环（地面标识，玩家中心清晰可见）
+    const ringGeo = new THREE.RingGeometry(.4, .55, 24);
+    const ringMat = new THREE.MeshBasicMaterial({
+        color:0xffdd66, transparent:true, opacity:.6, side:THREE.DoubleSide, depthWrite:false
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI/2;
+    ring.position.y = 0.02;
+    playerGroup.add(ring);
+
     playerGroup.position.copy(playerData.pos);
     scene.add(playerGroup);
 
-    const pl = new THREE.PointLight(0xffaa44, 1.2, 6);
-    pl.position.set(0,2,0);
+    // 玩家自带光源（跟随移动，照到前方）
+    const pl = new THREE.PointLight(0xffaa44, 1.5, 7);
+    pl.position.set(0, 2, .5);
     playerGroup.add(pl);
     player = playerGroup;
 }
@@ -1652,6 +1761,15 @@ function animate() {
     if (playerGroup) {
         playerGroup.position.copy(playerData.pos);
         playerGroup.position.y += Math.sin(gameTime*5)*.04*moved;
+
+        // 头顶蓝球浮动 + 旋转（让玩家远远就能看见）
+        playerGroup.traverse(o => {
+            if (o.userData.isPlayerMarker) {
+                o.position.y = 3.0 + Math.sin(gameTime*3)*0.25;
+                o.rotation.y = gameTime*1.5;
+                o.rotation.x = gameTime*0.8;
+            }
+        });
     }
 
     // 相机跟随
