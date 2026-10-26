@@ -559,13 +559,23 @@ function init() {
     camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 500);
     camera.position.set(0, 20, 14);
 
-    renderer = new THREE.WebGLRenderer({ antialias:!IS_MOBILE, powerPreference:IS_MOBILE?'low-power':'high-performance' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_MOBILE?1.5:2));
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.shadowMap.enabled = !IS_MOBILE;
-    renderer.shadowMap.type = IS_MOBILE ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
-    renderer.domElement.style.touchAction = 'none';
-    document.body.appendChild(renderer.domElement);
+    try {
+        renderer = new THREE.WebGLRenderer({ antialias:!IS_MOBILE, powerPreference:IS_MOBILE?'low-power':'high-performance' });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_MOBILE?1.5:2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = !IS_MOBILE;
+        renderer.shadowMap.type = IS_MOBILE ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
+        renderer.domElement.style.touchAction = 'none';
+        document.body.appendChild(renderer.domElement);
+    } catch (e) {
+        console.warn('WebGL不可用，使用Canvas降级', e);
+        // 降级：放一个占位黑画布，保证游戏不崩
+        const cv = document.createElement('canvas');
+        cv.width = window.innerWidth; cv.height = window.innerHeight;
+        cv.style.cssText='position:fixed;inset:0;background:#0a0603;pointer-events:none';
+        document.body.appendChild(cv);
+        renderer = { domElement:cv, shadowMap:{enabled:false}, setSize:()=>{}, setPixelRatio:()=>{} };
+    }
 
     scene.add(new THREE.AmbientLight(0x2a2030, 0.4));
     const sun = new THREE.DirectionalLight(0xffd4a0, 0.8);
@@ -1247,7 +1257,7 @@ function updateUI() {
         const unlocked = true; // 工具都可用
         const card = document.createElement('div');
         card.className = 'build-card' + (canAfford&&unlocked ? '' : ' disabled');
-        card.innerHTML = `<div class="build-icon">${def.icon}</div><div class="build-name">${def.name}</div><div class="build-cost">${Object.entries(def.cost).map(([r,a])=>`${a}${rName(r)}`).join(' ')}</div>`;
+        card.innerHTML = `<div class="build-icon">${def.icon}</div><div class="build-name">${def.name}</div><div class="build-cost">${Object.entries(def.cost).map(([r,a])=>`${a}${resName(r)}`).join(' ')}</div>`;
         card.title = def.desc;
         if (canAfford&&unlocked) card.onclick = () => useTool(key);
         toolsGrid.appendChild(card);
@@ -1270,7 +1280,7 @@ function updateUI() {
         if (playerData.currentBuild===key) card.classList.add('selected');
         if (!unlocked) card.innerHTML = `<div style="font-size:20px">🔒</div><div class="build-name">需要工坊</div>`;
         else {
-            card.innerHTML = `<div class="build-icon">${def.icon}</div><div class="build-name">${def.name}</div><div class="build-cost">${Object.entries(def.cost).map(([r,a])=>`${a}${rName(r)}`).join(' ')}</div>`;
+            card.innerHTML = `<div class="build-icon">${def.icon}</div><div class="build-name">${def.name}</div><div class="build-cost">${Object.entries(def.cost).map(([r,a])=>`${a}${resName(r)}`).join(' ')}</div>`;
             card.title = def.desc;
             if (canAfford) card.onclick = () => { playerData.currentBuild = playerData.currentBuild===key ? null : key; updateUI(); };
         }
@@ -1412,7 +1422,7 @@ function updateMinimap() {
         const c = cells[x][z];
         const px=x*cs, py=z*cs;
         if (c.lit){
-            const col = {grass:'#4a5a35',dirt:'#6a5a35',stone:'#8a8a8a',water:'#3a6a7a',sand:'#8a7a4a',ruins:'#5a4530'}[c.terrain];
+            const col = {grassland:'#4a5a35',desert:'#8a7a4a',forest:'#2a4520',ocean:'#3a6a7a',snow:'#c8d4dc',gobi:'#6a6258'}[c.terrain];
             ctx.fillStyle = col||'#555'; ctx.fillRect(px,py,cs+1,cs+1);
             if (c.building){ ctx.fillStyle='#ffdd66'; ctx.fillRect(px+cs/4,py+cs/4,cs/2,cs/2); }
             if (c.fragment){ ctx.fillStyle='#a855f7'; ctx.fillRect(px+cs/3,py+cs/3,cs/3,cs/3); }
