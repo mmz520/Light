@@ -286,12 +286,34 @@ canvas{display:block;touch-action:none}
     <button class="end-btn" onclick="location.reload()">重启记忆</button>
 </div>
 
-<script type="importmap">
-{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+<script>
+// 早期错误捕获：在模块加载之前注册，能捕获 import 失败 / 语法错误 / 运行时异常
+(function () {
+    window.__showFatal = function (title, msg, stack) {
+        var box = document.createElement('div');
+        box.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(10,6,3,.96);color:#ff6666;padding:16px;font:12px/1.6 monospace;white-space:pre-wrap;overflow:auto';
+        box.textContent = '❌ ' + title + '\n' + msg + (stack ? '\n\nStack:\n' + stack : '') + '\n\n（截图这一屏发给开发者）';
+        document.body.appendChild(box);
+    };
+    window.addEventListener('error', function (e) {
+        if (e && e.target && e.target !== window && e.target.tagName === 'SCRIPT') {
+            window.__showFatal('脚本加载失败', e.target.src || '(inline script)');
+            return;
+        }
+        window.__showFatal('运行错误', e.message || (e.error && e.error.message) || String(e),
+            (e.error && e.error.stack) || ((e.filename || '?') + ':' + (e.lineno || '?')));
+    }, true);
+    window.addEventListener('unhandledrejection', function (e) {
+        var r = e.reason;
+        window.__showFatal('Promise 错误', String(r), (r && r.stack) || '');
+    });
+})();
 </script>
 
 <script type="module">
-import * as THREE from 'three';
+// 本地内置 three.js，不依赖任何 CDN（CDN 被墙/超时会直接导致整页黑屏）
+import * as THREE from './vendor/three.module.js';
+window.__threeReady = true;
 
 // ================== 配置 ==================
 const CFG = {
@@ -306,11 +328,11 @@ const CFG = {
     VICTORY_FRAGMENTS: 5
 };
 
-// ===== 精灵表配置 =====
+// ===== 精灵表配置 (4列 × 8行, 8个方向) =====
 const SPRITE = {
-    player: { walk:'player_walk.png',  cols:6, rows:8, scaleY:1.4, action:'player_action.png', colsA:6, rowsA:8 },
-    hound:  { walk:'enemy1.png',       cols:6, rows:8, scaleY:1.2 },
-    beast:  { walk:'enemy2.png',       cols:6, rows:8, scaleY:1.6 }
+    player: { walk:'player_walk.png',  cols:4, rows:8, scaleY:1.4, action:'player_action.png', colsA:4, rowsA:8 },
+    hound:  { walk:'enemy1.png',       cols:4, rows:8, scaleY:1.2 },
+    beast:  { walk:'enemy2.png',       cols:4, rows:8, scaleY:1.6 }
 };
 
 // 精灵贴图缓存
@@ -336,14 +358,13 @@ function preloadSprites() {
 }
 
 // 8方向映射 (dx, dz) → 0-7
-// 摄像机在玩家+Z方向，所以: screenRight=dx, screenUp=dz
+// 摄像机位于玩家 +Z 方向: 世界 +Z = 屏幕下方, 世界 +X = 屏幕右方
 // 行顺序: DOWN(面对摄像机), DOWN-LEFT, LEFT, UP-LEFT, UP(背对), UP-RIGHT, RIGHT, DOWN-RIGHT
 function dir8(dx, dz) {
     if (Math.abs(dx) < 0.001 && Math.abs(dz) < 0.001) return -1;
     const angle = Math.atan2(dx, dz);
-    let idx = Math.round(angle / (Math.PI / 4));
-    idx = ((idx + 4) % 8 + 8) % 8;
-    return idx;
+    const idx = Math.round(angle / (Math.PI / 4));
+    return ((-idx % 8) + 8) % 8;
 }
 
 // 更新精灵帧UV
@@ -600,6 +621,182 @@ function startOpening() {
 
 function showMemoryIntro() { /* 已移除 */ }
 
+// ================== Canvas 2D 降级渲染 ==================
+// 没有 WebGL（虚拟机/远程桌面/沙箱/关闭硬件加速）时，用一个真正会绘制的 2D 渲染器，
+// 保证游戏画面一定可见，而不是只剩 UI。
+function createFallbackRenderer() {
+    const cv = document.createElement('canvas');
+    cv.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;background:#2a3038;z-index:1;touch-action:none';
+    document.body.appendChild(cv);
+    const ctx = cv.getContext('2d');
+
+    let W = window.innerWidth, H = window.innerHeight, dpr = 1;
+    const SX = 30, SY = 22;           // 每个世界单位对应的屏幕像素
+    let camX = 0, camZ = 0;
+
+    function applySize() {
+        cv.width = Math.max(1, Math.floor(W * dpr));
+        cv.height = Math.max(1, Math.floor(H * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    applySize();
+
+    const hex = c => '#' + (c & 0xffffff).toString(16).padStart(6, '0');
+    const pX = wx => (wx - camX) * SX + W / 2;
+    const pY = (wz, h) => (wz - camZ) * SY + H / 2 - (h || 0) * 12;
+
+    function shadowAt(x, y, r) {
+        ctx.fillStyle = 'rgba(0,0,0,.32)';
+        ctx.beginPath();
+        ctx.ellipse(x, y, r, r * 0.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // 从精灵表里画一帧
+    function drawFrame(tex, cols, rows, frameIdx, dirIdx, wx, wz, worldH) {
+        const img = tex && tex.image;
+        const x = pX(wx), y = pY(wz, 0);
+        if (!img || !img.width || !cols || !rows) {
+            ctx.fillStyle = '#c9a961';
+            ctx.beginPath(); ctx.arc(x, y - 20, 14, 0, Math.PI * 2); ctx.fill();
+            return;
+        }
+        const sw = img.width / cols, sh = img.height / rows;
+        const col = Math.max(0, Math.min(cols - 1, frameIdx | 0));
+        const row = Math.max(0, Math.min(rows - 1, dirIdx | 0));   // 图片第 0 行 = DOWN
+        const hpx = worldH * SY * 2.6;
+        const wpx = hpx * (sw / sh);
+        ctx.drawImage(img, col * sw, row * sh, sw, sh, x - wpx / 2, y - hpx + 6, wpx, hpx);
+    }
+
+    function drawTerrain() {
+        if (!cells.length) return;
+        const halfW = W / 2 / SX + cellSize * 2;
+        const halfH = H / 2 / SY + cellSize * 2;
+        for (let x = 0; x < mapSize; x++) {
+            const row = cells[x];
+            if (!row) continue;
+            for (let z = 0; z < mapSize; z++) {
+                const c = row[z];
+                if (!c) continue;
+                if (Math.abs(c.wx - camX) > halfW || Math.abs(c.wz - camZ) > halfH) continue;
+                const B = BIOMES[c.biome] || BIOMES.grassland;
+                const x0 = pX(c.wx) - cellSize * SX / 2;
+                const y0 = pY(c.wz, c.height) - cellSize * SY / 2;
+                ctx.fillStyle = hex(B.color);
+                ctx.fillRect(x0, y0, cellSize * SX + 1, cellSize * SY + 1);
+                if (c.height > 0.45) {   // 高度差：顶部提亮
+                    ctx.fillStyle = 'rgba(255,255,255,.06)';
+                    ctx.fillRect(x0, y0, cellSize * SX + 1, 4);
+                }
+                if (c.biome === 'ocean') {
+                    ctx.fillStyle = 'rgba(120,190,255,.08)';
+                    ctx.fillRect(x0, y0, cellSize * SX + 1, cellSize * SY + 1);
+                }
+            }
+        }
+    }
+
+    function draw2D() {
+        if (!camera) return;
+        camX = camera.position.x;
+        camZ = camera.position.z - 12;   // 相机在玩家 +Z 方向 12 处
+
+        ctx.fillStyle = '#2a3038';
+        ctx.fillRect(0, 0, W, H);
+        drawTerrain();
+
+        // 收集需要按前后顺序绘制的对象（+Z 更靠近镜头）
+        const list = [];
+        if (playerGroup) list.push({ z: playerGroup.position.z, kind: 'player' });
+        if (typeof threats !== 'undefined') for (const t of threats) list.push({ z: t.position.z, kind: 'threat', o: t });
+        if (typeof drops !== 'undefined') for (const d of drops) list.push({ z: d.position.z, kind: 'drop', o: d });
+        if (typeof fragments !== 'undefined') for (const f of fragments) list.push({ z: f.position.z, kind: 'fragment', o: f });
+        for (const o of scene.children) {
+            if (o.userData && o.userData.build && o.userData.bm && !o.userData.bm.destroyed)
+                list.push({ z: o.position.z, kind: 'building', o });
+        }
+        list.sort((a, b) => a.z - b.z);
+
+        for (const it of list) {
+            if (it.kind === 'player') {
+                const sp = playerGroup.userData.sprite;
+                const x = pX(playerData.pos.x), y = pY(playerData.pos.z, 0);
+                shadowAt(x, y, 20);
+                if (sp) {
+                    const isAction = sp.mat.map === sp.actionTex;
+                    drawFrame(sp.mat.map, isAction ? sp.colsA : sp.cols, isAction ? sp.rowsA : sp.rows,
+                        sp.frameIdx, sp.dirIdx, playerData.pos.x, playerData.pos.z, 1.55);
+                }
+            } else if (it.kind === 'threat') {
+                const o = it.o, u = o.userData;
+                const cfg = SPRITE[u.typeKey] || { cols: 4, rows: 8 };
+                const x = pX(o.position.x), y = pY(o.position.z, 0);
+                shadowAt(x, y, 18);
+                drawFrame(u.mat.map, cfg.cols, cfg.rows, u.frameIdx, u.dirIdx,
+                    o.position.x, o.position.z, u.typeKey === 'beast' ? 1.7 : 1.25);
+                // 血条
+                if (u.hp < u.maxHp) {
+                    ctx.fillStyle = 'rgba(0,0,0,.6)';
+                    ctx.fillRect(x - 18, y - 74, 36, 4);
+                    ctx.fillStyle = '#ff5544';
+                    ctx.fillRect(x - 18, y - 74, 36 * Math.max(0, u.hp / u.maxHp), 4);
+                }
+            } else if (it.kind === 'drop') {
+                const o = it.o, u = o.userData, drop = u.drop;
+                const x = pX(o.position.x), y = pY(o.position.z, o.position.y - o.userData.targetY);
+                const R = RARITY[u.rarity] || RARITY.common;
+                ctx.fillStyle = hex(R.color);
+                ctx.beginPath();
+                ctx.moveTo(x, y - 12); ctx.lineTo(x + 9, y); ctx.lineTo(x, y + 12); ctx.lineTo(x - 9, y);
+                ctx.closePath(); ctx.fill();
+                if (drop && drop.icon) {
+                    ctx.font = '13px serif';
+                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                    ctx.fillText(drop.icon, x, y);
+                }
+            } else if (it.kind === 'fragment') {
+                const x = pX(it.o.position.x), y = pY(it.o.position.z, 0);
+                ctx.fillStyle = '#ffdd66';
+                ctx.beginPath(); ctx.arc(x, y - 14, 9, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = 'rgba(255,221,102,.25)';
+                ctx.beginPath(); ctx.arc(x, y - 14, 18, 0, Math.PI * 2); ctx.fill();
+            } else if (it.kind === 'building') {
+                const o = it.o, bm = o.userData.bm;
+                const def = BUILDINGS[bm.type] || {};
+                const x = pX(o.position.x), y = pY(o.position.z, 0);
+                ctx.fillStyle = 'rgba(0,0,0,.28)';
+                ctx.fillRect(x - 22, y + 2, 44, 10);
+                ctx.fillStyle = '#3a2a1a';
+                ctx.fillRect(x - 20, y - 12, 40, 26);
+                ctx.fillStyle = '#8b6914';
+                ctx.fillRect(x - 20, y - 12, 40, 4);
+                if (def.icon) {
+                    ctx.font = '18px serif';
+                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                    ctx.fillText(def.icon, x, y + 4);
+                }
+            }
+        }
+
+        // 夜幕（轻微）+ 四周暗角
+        const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
+        vg.addColorStop(0, 'rgba(0,0,0,0)');
+        vg.addColorStop(1, 'rgba(0,0,0,.55)');
+        ctx.fillStyle = vg;
+        ctx.fillRect(0, 0, W, H);
+    }
+
+    return {
+        domElement: cv,
+        shadowMap: { enabled: false },
+        is2D: true,
+        setPixelRatio(v) { dpr = Math.min(v || 1, 2); applySize(); },
+        setSize(w, h) { W = w; H = h; applySize(); },
+        render() { draw2D(); }
+    };
+}
+
 // ================== 初始化 ==================
 async function init() {
     clock = new THREE.Clock();
@@ -618,12 +815,10 @@ async function init() {
         renderer.domElement.style.touchAction = 'none';
         document.body.appendChild(renderer.domElement);
     } catch (e) {
-        console.warn('WebGL不可用，使用Canvas降级', e);
-        const cv = document.createElement('canvas');
-        cv.width = window.innerWidth; cv.height = window.innerHeight;
-        cv.style.cssText='position:fixed;inset:0;background:#0a0603;pointer-events:none';
-        document.body.appendChild(cv);
-        renderer = { domElement:cv, shadowMap:{enabled:false}, setSize:()=>{}, setPixelRatio:()=>{}, render:()=>{} };
+        // 没有 WebGL：用真正会绘制的 Canvas 2D 渲染器（不是空壳）
+        console.warn('WebGL不可用，切换 Canvas2D 渲染', e);
+        renderer = createFallbackRenderer();
+        showMsg('未启用 WebGL，已切换 2D 渲染模式', 'info');
     }
 
     scene.add(new THREE.AmbientLight(0x2a2030, 0.4));
@@ -889,7 +1084,11 @@ function createPlayer() {
         blending: THREE.NormalBlending
     });
     const sprite = new THREE.Sprite(mat);
-    sprite.scale.set(1.2, 1.2 * 1.4, 1);
+    // 按单元格真实宽高比缩放, 避免拉伸变形
+    const imgP = finalWalkTex && finalWalkTex.image;
+    const aspP = imgP ? (imgP.width / SPRITE.player.cols) / (imgP.height / SPRITE.player.rows) : 0.88;
+    const pw = 1.25;
+    sprite.scale.set(pw, pw / aspP, 1);
     sprite.position.y = 0.9;
     playerGroup.add(sprite);
 
@@ -903,7 +1102,9 @@ function createPlayer() {
         frameTime: 0,
         isWalking: false,
         isAttacking: false,
-        attackTimer: 0
+        attackTimer: 0,
+        isCrafting: false,
+        craftTimer: 0
     };
 
     playerGroup.position.copy(playerData.pos);
@@ -1088,6 +1289,13 @@ function tryBuild(type, worldPos) {
 
     for (const [r,a] of Object.entries(def.cost)) playerData.inv[r] -= a;
     buildStructure(type, worldPos);
+    // 播放制作动画(朝建造点)
+    const cst = playerGroup && playerGroup.userData.sprite;
+    if (cst && cst.actionTex) {
+        cst.isCrafting = true;
+        cst.craftTimer = 0.9;
+        cst.dirIdx = dir8(worldPos.x - playerData.pos.x, worldPos.z - playerData.pos.z);
+    }
     showMsg(`开始建造 ${def.name}`, 'info');
     updateUI();
 }
@@ -1250,17 +1458,24 @@ function createThreat(pos) {
     const roll = Math.random();
     const typeKey = roll < 0.55 ? 'hound' : 'beast';
     const type = ENEMY_TYPES[typeKey];
-    const tex = spriteTex[typeKey];
-
-    if (tex) tex.repeat.set(1 / SPRITE[typeKey].cols, 1 / SPRITE[typeKey].rows);
+    // 每只敌人克隆一份贴图, 避免多只共享同一 offset 导致帧/方向互相干扰
+    const baseTex = spriteTex[typeKey];
+    const tex = baseTex ? baseTex.clone() : null;
+    if (tex) {
+        tex.needsUpdate = true;
+        tex.repeat.set(1 / SPRITE[typeKey].cols, 1 / SPRITE[typeKey].rows);
+    }
 
     const mat = new THREE.SpriteMaterial({
         map: tex, transparent: true, depthTest: true, depthWrite: false
     });
     const sprite = new THREE.Sprite(mat);
-    const scaleY = SPRITE[typeKey].scaleY;
-    sprite.scale.set(1.3, 1.3 * scaleY, 1);
-    sprite.position.y = typeKey === 'hound' ? 0.6 : 1.0;
+    // 按单元格真实宽高比缩放
+    const imgE = tex && tex.image;
+    const aspE = imgE ? (imgE.width / SPRITE[typeKey].cols) / (imgE.height / SPRITE[typeKey].rows) : 1;
+    const ew = typeKey === 'hound' ? 1.7 : 1.5;
+    sprite.scale.set(ew, ew / aspE, 1);
+    sprite.position.y = typeKey === 'hound' ? 0.7 : 1.0;
     g.add(sprite);
 
     g.userData = {
@@ -1728,8 +1943,27 @@ function animate() {
         if (sp) {
             sp.frameTime += dt;
 
+            // 制作动画 (action 表第4帧: 蹲下施工)
+            if (sp.isCrafting) {
+                sp.craftTimer -= dt;
+                if (sp.mat.map !== sp.actionTex && sp.actionTex) {
+                    sp.mat.map = sp.actionTex;
+                    sp.mat.needsUpdate = true;
+                }
+                sp.frameIdx = sp.colsA - 1;
+                if (sp.craftTimer <= 0) {
+                    sp.isCrafting = false;
+                    sp.frameIdx = 0;
+                    sp.frameTime = 0;
+                    if (sp.mat.map !== sp.walkTex && sp.walkTex) {
+                        sp.mat.map = sp.walkTex;
+                        sp.mat.needsUpdate = true;
+                    }
+                }
+                updateSpriteUV(sp, sp.mat.map, sp.colsA, sp.rowsA, sp.frameIdx, sp.dirIdx);
+            }
             // 攻击动画
-            if (sp.isAttacking) {
+            else if (sp.isAttacking) {
                 sp.attackTimer -= dt;
                 // 切换到 action 精灵表
                 if (sp.mat.map !== sp.actionTex && sp.actionTex) {
@@ -1757,7 +1991,7 @@ function animate() {
                 }
                 if (sp.isWalking) {
                     const WALK_FPS = 8;
-                    const walkSeq = [0, 1, 2, 3, 4, 5];
+                    const walkSeq = [0, 1, 2, 3];
                     sp.frameIdx = walkSeq[Math.floor(sp.frameTime * WALK_FPS) % walkSeq.length];
                 } else {
                     // 待机
@@ -1875,7 +2109,7 @@ function animate() {
         u.frameTime += dt;
         if (u.isMoving) {
             const WALK_FPS = u.typeKey === 'hound' ? 10 : 5;
-            u.frameIdx = Math.floor(u.frameTime * WALK_FPS) % 6;
+            u.frameIdx = Math.floor(u.frameTime * WALK_FPS) % SPRITE[u.typeKey].cols;
         } else {
             const IDLE_FPS = 1;
             u.frameIdx = Math.floor(u.frameTime * IDLE_FPS) % 2;
@@ -2023,19 +2257,7 @@ function endGame(result) {
 }
 
 // ================== 启动 ==================
-// 全局错误捕获（调试用）
-window.addEventListener('error', e => {
-    const box = document.createElement('div');
-    box.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(10,6,3,.95);color:#ff6666;padding:20px;font:12px monospace;white-space:pre-wrap;overflow:auto';
-    box.textContent = '❌ JS ERROR\n' + (e.message||e.error?.message||String(e)) + '\n\nStack:\n' + (e.error?.stack||e.filename+':'+e.lineno);
-    document.body.appendChild(box);
-});
-window.addEventListener('unhandledrejection', e => {
-    const box = document.createElement('div');
-    box.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(10,6,3,.95);color:#ff6666;padding:20px;font:12px monospace;white-space:pre-wrap;overflow:auto';
-    box.textContent = '❌ PROMISE ERROR\n' + String(e.reason);
-    document.body.appendChild(box);
-});
+// 错误捕获统一由页面头部的早期脚本负责（window.__showFatal）
 
 requestAnimationFrame(()=>{
     try { settingsInit(); } catch(e) { console.warn('settingsInit failed', e); }
@@ -2043,10 +2265,7 @@ requestAnimationFrame(()=>{
     clock = new THREE.Clock();
     init().catch(err => {
         console.error('INIT FAILED (async):', err);
-        const box = document.createElement('div');
-        box.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(10,6,3,.95);color:#ff6666;padding:20px;font:12px monospace;white-space:pre-wrap;overflow:auto';
-        box.textContent = '❌ INIT FAILED\n' + (err.message || String(err)) + '\n\nStack:\n' + (err.stack || 'no stack');
-        document.body.appendChild(box);
+        if (window.__showFatal) window.__showFatal('初始化失败', err.message || String(err), err.stack || '');
     });
 
     try { rollStartSequence(); } catch(e) { console.warn('rollStartSequence failed', e); }
