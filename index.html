@@ -728,11 +728,12 @@ function buildWorld() {
     const fogC = document.createElement('canvas'); fogC.width=256; fogC.height=256;
     const fogX = fogC.getContext('2d'); fogX.fillStyle='#000'; fogX.fillRect(0,0,256,256);
     const fogT = new THREE.CanvasTexture(fogC);
-    const fogM = new THREE.MeshBasicMaterial({ map:fogT, transparent:true, depthWrite:false, side:THREE.DoubleSide, blending:THREE.CustomBlending, blendSrc:THREE.ZeroFactor, blendDst:THREE.OneMinusSrcAlphaFactor });
+    const fogM = new THREE.MeshBasicMaterial({ map:fogT, transparent:true, depthWrite:false, side:THREE.DoubleSide });
     const fogG = new THREE.PlaneGeometry(mapSize*cellSize+4, mapSize*cellSize+4);
     const fog = new THREE.Mesh(fogG, fogM); fog.rotation.x = -Math.PI/2; fog.position.y = 5;
     scene.add(fog);
-    scene.userData = { fogX, fogT };
+    scene.userData.fogX = fogX;
+    scene.userData.fogT = fogT;
 }
 
 // 颜色插值（hex → 过渡 → hex）
@@ -746,13 +747,24 @@ function lerpColor(c1, c2, t) {
 function updateFog() {
     const ctx = scene.userData.fogX;
     const ws = mapSize*cellSize, sc = 256/ws;
-    ctx.fillStyle = '#000'; ctx.fillRect(0,0,256,256);
+    // 全黑遮罩（alpha=1 → 完全盖住未探索区域）
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgba(0,0,0,1)';
+    ctx.fillRect(0,0,256,256);
+    // 已探索：用 destination-out 擦掉 alpha，再按状态叠色
     for (let x=0;x<mapSize;x++) for (let z=0;z<mapSize;z++) {
         const c = cells[x][z];
         if (c.lit || c.revealed) {
             const cx = (c.wx + ws/2)*sc, cy = (c.wz + ws/2)*sc;
-            ctx.fillStyle = c.lit ? '#ffffff' : 'rgba(100,90,70,.35)';
-            ctx.fillRect(cx-1, cy-1, cellSize*sc+2, cellSize*sc+2);
+            const sz = cellSize*sc+2;
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.fillRect(cx-1, cy-1, sz, sz);
+            if (!c.lit) {
+                // 已探索未点亮 → 叠半透明暗灰（看得见但阴森）
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.fillStyle = 'rgba(40,35,30,0.55)';
+                ctx.fillRect(cx-1, cy-1, sz, sz);
+            }
         }
     }
     scene.userData.fogT.needsUpdate = true;
