@@ -21,6 +21,31 @@ canvas{display:block;touch-action:none}
 .start-num-label{position:absolute;bottom:8px;font-size:10px;color:#5a4a2a;letter-spacing:4px;text-transform:uppercase}
 .start-story{max-width:500px;text-align:center;font-size:11px;color:#6a5a3a;line-height:1.8;margin-top:40px;padding:0 20px}
 .start-enter{margin-top:30px;font-size:11px;color:#8b6914;letter-spacing:3px;animation:pulse 1.5s infinite}
+.settings-btn{position:absolute;right:20px;bottom:20px;background:rgba(10,6,3,.7);border:1px solid #5a4a2a;color:#c9a961;padding:8px 14px;font-size:12px;cursor:pointer;font-family:inherit;letter-spacing:2px;border-radius:4px;transition:all .2s}
+.settings-btn:hover{background:#8b6914;color:#0a0603}
+
+/* 设置弹窗 */
+.settings-modal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.8);display:none;align-items:center;justify-content:center}
+.settings-modal.open{display:flex}
+.settings-box{width:min(520px,92vw);background:#0a0603;border:1px solid #8b6914;padding:24px;border-radius:6px;box-shadow:0 0 40px rgba(139,105,20,.4)}
+.settings-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.settings-head span{font-size:18px;color:#c9a961;letter-spacing:6px}
+.settings-close{background:transparent;border:1px solid #5a4a2a;color:#c9a961;width:28px;height:28px;cursor:pointer;border-radius:4px}
+.settings-sub{font-size:10px;color:#6a5a3a;margin-bottom:18px;letter-spacing:1px}
+.settings-list{display:flex;flex-direction:column;gap:12px;margin-bottom:14px;max-height:55vh;overflow:auto;padding-right:4px}
+.biome-row{display:flex;align-items:center;gap:10px;font-size:12px}
+.biome-row .b-icon{font-size:20px;width:28px;text-align:center}
+.biome-row .b-name{width:60px;color:#c9a961}
+.biome-row input[type=range]{flex:1;-webkit-appearance:none;appearance:none;height:4px;background:#5a4a2a;border-radius:2px;outline:none}
+.biome-row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;background:#c9a961;border:2px solid #8b6914;border-radius:50%;cursor:pointer}
+.biome-row input[type=range]::-moz-range-thumb{width:16px;height:16px;background:#c9a961;border:2px solid #8b6914;border-radius:50%;cursor:pointer}
+.biome-row .b-val{width:38px;text-align:right;color:#ffdd66;font-weight:bold}
+.settings-bar-total{text-align:right;font-size:11px;color:#5a4a2a;margin-bottom:14px}
+.settings-foot{display:flex;justify-content:flex-end;gap:10px}
+.btn{background:transparent;border:1px solid #5a4a2a;color:#c9a961;padding:8px 18px;font-size:11px;cursor:pointer;font-family:inherit;letter-spacing:2px;border-radius:4px}
+.btn:hover{background:#5a4a2a;color:#0a0603}
+.btn-save{background:#8b6914;border-color:#8b6914;color:#0a0603;font-weight:bold}
+.btn-save:hover{background:#c9a961;border-color:#c9a961}
 @keyframes pulse{0%,100%{opacity:.4}50%{opacity:1}}
 
 /* ============== 睁眼特效 ============== */
@@ -168,6 +193,24 @@ canvas{display:block;touch-action:none}
         <div class="start-num-label">沙箱编号</div>
     </div>
     <div class="start-enter" id="startEnter">点击 / 触屏 进入</div>
+    <button class="settings-btn" id="openSettings" title="游戏设置">⚙ 设置</button>
+</div>
+
+<!-- 设置弹窗 -->
+<div class="settings-modal" id="settingsModal">
+    <div class="settings-box">
+        <div class="settings-head">
+            <span>游戏设置</span>
+            <button class="settings-close" id="closeSettings">✕</button>
+        </div>
+        <div class="settings-sub">各地貌权重（总和自动归一化，默认 = 100）</div>
+        <div class="settings-list" id="biomeSliders"></div>
+        <div class="settings-bar-total" id="weightTotal">总和：100</div>
+        <div class="settings-foot">
+            <button class="btn" id="resetBiomes">重置</button>
+            <button class="btn btn-save" id="applyBiomes">应用</button>
+        </div>
+    </div>
 </div>
 
 <!-- ============ 睁眼特效 ============ -->
@@ -263,6 +306,17 @@ const CFG = {
     VICTORY_FRAGMENTS: 5
 };
 
+// ===== 地貌权重（设置页可改，和为 100） =====
+const BIOMES = {
+    grassland:{ name:'草原',  icon:'🌿', color:0x3a5530, dark:0x2a4025, height:.35, buildable:true, weights:30 },
+    desert:   { name:'沙漠',  icon:'🏜', color:0x8a6a38, dark:0x6a5028, height:.15, buildable:true, weights:18 },
+    forest:   { name:'森林',  icon:'🌲', color:0x1f3a1f, dark:0x152815, height:.50, buildable:true, weights:22 },
+    ocean:    { name:'海洋',  icon:'🌊', color:0x1a3a5a, dark:0x0e2a42, height:-.6, buildable:false, weights:12 },
+    snow:     { name:'雪原',  icon:'❄️', color:0xd8e4ec, dark:0xa8b4bc, height:.55, buildable:true, weights:10 },
+    gobi:     { name:'戈壁',  icon:'🪨', color:0x5a5248, dark:0x3a3228, height:.30, buildable:true, weights:8  }
+};
+let BIOME_ORDER = Object.keys(BIOMES); // 保持插入顺序
+
 // 稀有度
 const RARITY = {
     common:   { color:0x888888, name:'常见', weight:45 },
@@ -346,33 +400,120 @@ let projectiles = [];
 
 let mobile = { move:{x:0,y:0}, jid:null, jc:null };
 
+// ================== 设置面板 ==================
+function settingsInit() {
+    const modal = document.getElementById('settingsModal');
+    const list = document.getElementById('biomeSliders');
+    const totalEl = document.getElementById('weightTotal');
+
+    function render() {
+        list.innerHTML = '';
+        BIOME_ORDER.forEach(k => {
+            const B = BIOMES[k];
+            const row = document.createElement('div');
+            row.className = 'biome-row';
+            row.innerHTML = `
+                <span class="b-icon">${B.icon}</span>
+                <span class="b-name">${B.name}</span>
+                <input type="range" min="0" max="100" value="${B.weights}" data-k="${k}">
+                <span class="b-val" id="val-${k}">${B.weights}</span>`;
+            list.appendChild(row);
+        });
+        updateTotal();
+    }
+    function updateTotal() {
+        let t = 0;
+        BIOME_ORDER.forEach(k => t += BIOMES[k].weights);
+        totalEl.textContent = `总和：${t}` + (t===100 ? '' : '（将自动归一化）');
+    }
+
+    list.addEventListener('input', e => {
+        const k = e.target.dataset.k;
+        if (!k) return;
+        let v = parseInt(e.target.value) || 0;
+        v = Math.max(0, Math.min(100, v));
+        BIOMES[k].weights = v;
+        document.getElementById('val-'+k).textContent = v;
+        updateTotal();
+    });
+
+    document.getElementById('openSettings').addEventListener('click', e => {
+        e.stopPropagation();
+        modal.classList.add('open');
+    });
+    document.getElementById('closeSettings').addEventListener('click', () => modal.classList.remove('open'));
+    modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('open'); });
+    document.getElementById('resetBiomes').addEventListener('click', () => {
+        // 重置默认权重
+        BIOMES.grassland.weights = 30; BIOMES.desert.weights = 18;
+        BIOMES.forest.weights = 22;   BIOMES.ocean.weights = 12;
+        BIOMES.snow.weights = 10;     BIOMES.gobi.weights = 8;
+        render();
+    });
+    document.getElementById('applyBiomes').addEventListener('click', () => {
+        modal.classList.remove('open');
+    });
+
+    render();
+}
+
 // ================== 开始动画 ==================
 function rollStartSequence() {
-    // 随机滚动数字 0-99，然后定格
-    sandboxId = Math.floor(Math.random()*100);
     const numEl = document.getElementById('sandboxNum');
-    let count = 0;
-    const iv = setInterval(() => {
-        numEl.textContent = Math.floor(Math.random()*100);
-        count++;
-        if (count >= 30) {
-            clearInterval(iv);
-            numEl.textContent = sandboxId;
-            numEl.style.color = '#ffdd66';
-        }
-    }, 50);
 
-    // 点击/触屏进入（用 document 捕获，避免子元素拦截）
-    const start = () => {
+    // 点击/触屏进入 → 沙箱号码滚动 → 地图实际生成 → 睁眼特效 → 进入游戏
+    const start = (e) => {
         if (gameState !== 'start') return;
+        // 不要拦截 settings 弹窗
+        if (e && e.target && e.target.closest('#settingsModal')) return;
+
         gameState = 'opening';
-        document.getElementById('startScreen').classList.add('fadeout');
-        document.getElementById('startScreen').style.pointerEvents = 'none';
-        setTimeout(() => startOpening(), 700);
+        numEl.style.color = '#c9a961';
+        const startScreen = document.getElementById('startScreen');
+        startScreen.classList.add('fadeout');
+        startScreen.style.pointerEvents = 'none';
+
+        // 显示"生成中..."
+        let count = 0;
+        let built = false;
+        const iv = setInterval(() => {
+            sandboxId = Math.floor(Math.random()*100);
+            numEl.textContent = sandboxId;
+            count++;
+            if (count === 15 && !built) {
+                built = true;
+                rebuildWorldNow(); // ← 地图在滚动中生成
+            }
+            if (count >= 35) {
+                clearInterval(iv);
+                numEl.textContent = sandboxId;
+                numEl.style.color = '#ffdd66';
+                setTimeout(() => startOpening(), 400);
+            }
+        }, 45);
     };
-    // 同时绑定 click 和 touchstart（某些移动端 touchstart 会阻止后续 click）
     document.addEventListener('click', start, { once:true });
     document.addEventListener('touchstart', start, { once:true, passive:true });
+}
+
+// 真正重建世界（使用当前 BIOME 权重）
+function rebuildWorldNow() {
+    // 保留玩家引用，清空其模型
+    if (playerGroup) { scene.remove(playerGroup); playerGroup = null; }
+    // 清空威胁/投放
+    threats.forEach(t => { if (t.mesh) scene.remove(t.mesh); }); threats = [];
+    drops.forEach(d => { scene.remove(d); }); drops = [];
+    fragments.forEach(f => { scene.remove(f); }); fragments = [];
+    queue = []; projectiles = [];
+
+    buildWorld();
+    // 玩家放到新出生点
+    const sp = cells._spawn || {x:Math.floor(mapSize/2), z:Math.floor(mapSize/2)};
+    playerData.pos.set(cells[sp.x][sp.z].wx, cells[sp.x][sp.z].height + 0.6, cells[sp.x][sp.z].wz);
+    createPlayer();
+    createCampfire();
+    revealArea(playerData.pos, 8);
+    updateFog();
 }
 
 function startOpening() {
@@ -434,6 +575,9 @@ function init() {
     scene.userData.sun = sun;
 
     buildWorld();
+    // 对齐玩家出生点到实际可建造格
+    const sp = cells._spawn || {x:Math.floor(mapSize/2), z:Math.floor(mapSize/2)};
+    playerData.pos.set(cells[sp.x][sp.z].wx, cells[sp.x][sp.z].height + 0.6, cells[sp.x][sp.z].wz);
     createPlayer();
     createCampfire();
     revealArea(playerData.pos, 8);
@@ -455,6 +599,7 @@ function init() {
 
     if (IS_MOBILE) setupMobile();
 
+    settingsInit();
     rollStartSequence();
     animate();
 }
@@ -463,30 +608,107 @@ function onResize(){ camera.aspect=window.innerWidth/window.innerHeight; camera.
 
 // ================== 世界 ==================
 function buildWorld() {
+    // 清空旧地形（支持重建）
+    const old = scene.getObjectByName('terrain');
+    if (old) scene.remove(old);
+    // 清旧建筑/投放/威胁
+    scene.traverse(o => {
+        if (o.userData.build || o.userData.isDrop || o.userData.isThreat || o.userData.isPlayer) return;
+    });
     cells = [];
     const tg = new THREE.Group(); tg.name = 'terrain'; scene.add(tg);
-    const colors = { grass:0x2a3a25, dirt:0x4a3520, stone:0x5a5a5a, water:0x1a3a4a, sand:0x6a5a3a, ruins:0x3a2a20 };
 
-    for (let x = 0; x < mapSize; x++) {
+    // —— 1. 归一化生物群落权重 ——
+    const totalW = BIOME_ORDER.reduce((s,k)=>s+BIOMES[k].weights, 0) || 1;
+    const cum = {}; let acc = 0;
+    BIOME_ORDER.forEach(k => { acc += BIOMES[k].weights/totalW; cum[k] = acc; });
+
+    // —— 2. 生成噪声图（两层，有空间连续性） ——
+    const noise1 = [], noise2 = [];
+    for (let x=0;x<mapSize;x++) {
+        noise1[x]=[]; noise2[x]=[];
+        for (let z=0;z<mapSize;z++) {
+            const nx=x/mapSize, nz=z/mapSize;
+            // 低频大尺度噪声：决定大洲/海洋轮廓
+            noise1[x][z] = Math.sin(nx*6+1.3)*Math.cos(nz*6+2.7)
+                          + Math.sin(nx*3.3+nz*1.7)*.7
+                          + Math.cos(nx*1.7+nz*2.3)*.5
+                          + (Math.random()-.5)*.3;
+            // 高频小尺度噪声：局部扰动
+            noise2[x][z] = Math.sin(nx*16)*Math.cos(nz*16)*.3
+                          + Math.sin(nx*8.7+nz*5.3)*.2
+                          + (Math.random()-.5)*.4;
+        }
+    }
+
+    // —— 3. 根据噪声+权重分配生物群落 ——
+    for (let x=0; x<mapSize; x++) {
         cells[x] = [];
-        for (let z = 0; z < mapSize; z++) {
-            const nx=x/10, nz=z/10;
-            const n = Math.sin(nx*2.5)*Math.cos(nz*2.5)+Math.sin(nx*1.3+nz*.7)*.5+Math.cos(nx*.5+nz*1.5)*.3;
-            let t, h;
-            if (n>.8){t='stone';h=1.2} else if (n>.4){t='grass';h=.3} else if (n>0){t='dirt';h=.2} else if (n>-.3){t='sand';h=.1} else if (n>-.6){t='ruins';h=.4} else {t='water';h=-.5};
+        for (let z=0; z<mapSize; z++) {
             const dc = Math.sqrt((x-mapSize/2)**2+(z-mapSize/2)**2);
-            if (dc<5){t='grass';h=.3}
+            // 组合噪声 → [0,1] 范围内的值作为"生物群落索引"
+            const nRaw = noise1[x][z]*0.75 + noise2[x][z]*0.25; // 范围约 [-1.5,1.5]
+            const nIdx = (nRaw + 1.5) / 3; // 归一到 [0,1]
 
-            const geo = new THREE.BoxGeometry(cellSize, Math.max(.1,h), cellSize);
-            const mat = new THREE.MeshLambertMaterial({ color: colors[t] });
+            let biome = 'grassland';
+            // 中心出生点保底（海洋权重很高时也不让出生在海里）
+            if (dc > 3) {
+                for (const k of BIOME_ORDER) {
+                    if (nIdx <= cum[k]) { biome = k; break; }
+                }
+            } else {
+                biome = 'grassland'; // 中心强制草原
+            }
+
+            const B = BIOMES[biome];
+            let h = B.height + (noise2[x][z]*0.15); // 微扰动
+            h = Math.max(-.8, h);
+
+            const geo = new THREE.BoxGeometry(cellSize, Math.max(.15, h+0.8), cellSize);
+            // 根据噪声微调到邻近色
+            const base = B.color;
+            const tint = B.dark;
+            const t = Math.max(0, Math.min(1, (noise1[x][z]+noise2[x][z])*0.5+0.5));
+            const col = lerpColor(tint, base, t);
+            const mat = new THREE.MeshLambertMaterial({ color: col });
             const m = new THREE.Mesh(geo, mat);
-            m.position.set(x*cellSize-mapSize*cellSize/2, h/2, z*cellSize-mapSize*cellSize/2);
+            m.position.set(
+                x*cellSize - mapSize*cellSize/2,
+                h/2,
+                z*cellSize - mapSize*cellSize/2
+            );
             m.receiveShadow = true;
             tg.add(m);
 
-            cells[x][z] = { x,z, wx:m.position.x, wz:m.position.z, terrain:t, height:h, mesh:m, revealed:false, lit:false, building:null, drop:null, fragment:null };
+            cells[x][z] = {
+                x, z,
+                wx: m.position.x, wz: m.position.z,
+                biome: biome,
+                terrain: biome,
+                height: h,
+                mesh: m,
+                revealed: false, lit: false,
+                building: null, drop: null, fragment: null,
+                buildable: B.buildable
+            };
         }
     }
+
+    // 玩家出生点：找中心附近最近的可建造格子
+    const cx = Math.floor(mapSize/2), cz = Math.floor(mapSize/2);
+    let spawn = { x:cx, z:cz };
+    for (let r=0; r<8; r++) {
+        let found = false;
+        for (let dx=-r;dx<=r&&!found;dx++)
+        for (let dz=-r;dz<=r&&!found;dz++) {
+            const xx = cx+dx, zz = cz+dz;
+            if (xx>=0&&xx<mapSize&&zz>=0&&zz<mapSize && cells[xx][zz].buildable) {
+                spawn = {x:xx, z:zz}; found = true;
+            }
+        }
+        if (found) break;
+    }
+    cells._spawn = spawn;
 
     // 迷雾
     const fogC = document.createElement('canvas'); fogC.width=256; fogC.height=256;
@@ -497,6 +719,14 @@ function buildWorld() {
     const fog = new THREE.Mesh(fogG, fogM); fog.rotation.x = -Math.PI/2; fog.position.y = 5;
     scene.add(fog);
     scene.userData = { fogX, fogT };
+}
+
+// 颜色插值（hex → 过渡 → hex）
+function lerpColor(c1, c2, t) {
+    const r1=(c1>>16)&0xff, g1=(c1>>8)&0xff, b1=c1&0xff;
+    const r2=(c2>>16)&0xff, g2=(c2>>8)&0xff, b2=c2&0xff;
+    const r=Math.round(r1+(r2-r1)*t), g=Math.round(g1+(g2-g1)*t), b=Math.round(b1+(b2-b1)*t);
+    return (r<<16)|(g<<8)|b;
 }
 
 function updateFog() {
@@ -575,11 +805,23 @@ function createPlayer() {
 }
 
 function createCampfire() {
-    // 玩家旁 5 单位处放初始篝火
-    const pos = new THREE.Vector3(4, cells[mapSize/2][mapSize/2].height, 0);
-    const cell = getCell(pos.x, pos.z);
-    if (cell) {
-        // 确保有足够材料建造
+    // 玩家旁 4 单位处放初始篝火（沿玩家面朝方向偏移）
+    const px = playerData.pos.x, pz = playerData.pos.z;
+    const sp = cells._spawn || {x:Math.floor(mapSize/2), z:Math.floor(mapSize/2)};
+    const spawnCenter = new THREE.Vector3(cells[sp.x][sp.z].wx, cells[sp.x][sp.z].height, cells[sp.x][sp.z].wz);
+    // 偏移到 spawnCenter + (4,0,0) 且找到可建造格
+    const tryPositions = [
+        new THREE.Vector3(spawnCenter.x + 4, spawnCenter.y, spawnCenter.z),
+        new THREE.Vector3(spawnCenter.x + 2, spawnCenter.y, spawnCenter.z + 3),
+        new THREE.Vector3(spawnCenter.x - 2, spawnCenter.y, spawnCenter.z + 3),
+        spawnCenter
+    ];
+    let pos = null;
+    for (const tp of tryPositions) {
+        const cell = getCell(tp.x, tp.z);
+        if (cell && cell.buildable) { pos = new THREE.Vector3(tp.x, cell.height, tp.z); break; }
+    }
+    if (pos) {
         playerData.inv.wood += 3;
         playerData.inv.stone += 2;
         buildStructure('campfire', pos, true);
@@ -591,7 +833,7 @@ function buildStructure(type, pos, instant=false) {
     const def = BUILDINGS[type];
     const cell = getCell(pos.x, pos.z);
     if (!cell) return null;
-    if (cell.terrain==='water') return null;
+    if (!cell.buildable) return null;
     if (cell.building) return null;
 
     const b = new THREE.Group();
@@ -728,7 +970,7 @@ function tryBuild(type, worldPos) {
     }
     const cell = getCell(worldPos.x, worldPos.z);
     if (!cell) { showMsg('无法建造','warn'); return; }
-    if (cell.terrain==='water') { showMsg('水上不能建造','warn'); return; }
+    if (!cell.buildable) { showMsg('此处不能建造','warn'); return; }
     if (cell.building) { showMsg('这里已有东西','warn'); return; }
     if (!cell.revealed) { showMsg('先探索这个区域','warn'); return; }
     if (playerData.pos.distanceTo(worldPos) > 15) { showMsg('太远了','warn'); return; }
@@ -749,7 +991,7 @@ function rollDrop() {
         const x = Math.floor(Math.random()*size);
         const z = Math.floor(Math.random()*size);
         const cell = cells[x][z];
-        if (cell.terrain === 'water') continue;
+        if (!cell.buildable) continue;
         const dist = Math.sqrt((x-center.x)**2 + (z-center.z)**2);
         if (dist < 5) continue; // 不远投在出生点
         if (cell.building) continue; // 建筑范围不投
@@ -861,7 +1103,7 @@ function spawnThreat() {
         const x = Math.floor(Math.random()*size);
         const z = Math.floor(Math.random()*size);
         const cell = cells[x][z];
-        if (cell.terrain === 'water') continue;
+        if (!cell.buildable) continue;
         if (cell.lit) continue;
         const dist = playerData.pos.distanceTo(new THREE.Vector3(cell.wx,0,cell.wz));
         if (dist > 12 && dist < 30) {
@@ -1307,7 +1549,7 @@ function update(dt) {
         playerData.pos.x = Math.max(-bound, Math.min(bound, playerData.pos.x));
         playerData.pos.z = Math.max(-bound, Math.min(bound, playerData.pos.z));
         const c = getCell(playerData.pos.x, playerData.pos.z);
-        if (c && c.terrain!=='water') playerData.pos.y = c.height;
+        if (c && c.buildable) playerData.pos.y = c.height;
 
         playerGroup.rotation.y = Math.atan2(dx, dz);
         revealArea(playerData.pos, 7);
