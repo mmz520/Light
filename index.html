@@ -1804,13 +1804,24 @@ function animate() {
         sun.intensity = night ? 0.15 : 0.8;
     }
 
-    // 玩家移动
+    // 玩家移动（WASD = 摄像机视角方向，不是世界坐标）
     if (playerData.attackCd>0) playerData.attackCd-=dt;
     let dx=0, dz=0;
-    if (keys['KeyW']) dz -= 1;
-    if (keys['KeyS']) dz += 1;
-    if (keys['KeyA']) dx -= 1;
-    if (keys['KeyD']) dx += 1;
+    // 计算摄像机视角的 forward（屏幕上="前"）和 right（屏幕右="右"）
+    let fwdX = 0, fwdZ = -1, rightX = 1, rightZ = 0;
+    if (camera && playerData) {
+        const camPos = camera.position.clone();
+        const pp = playerData.pos.clone();
+        const fwd = new THREE.Vector3().subVectors(pp, camPos).setY(0).normalize();
+        const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0,1,0)).normalize();
+        fwdX = fwd.x; fwdZ = fwd.z;
+        rightX = right.x; rightZ = right.z;
+    }
+    if (keys['KeyW']) { dx += fwdX; dz += fwdZ; }
+    if (keys['KeyS']) { dx -= fwdX; dz -= fwdZ; }
+    if (keys['KeyA']) { dx -= rightX; dz -= rightZ; }
+    if (keys['KeyD']) { dx += rightX; dz += rightZ; }
+    // 移动端摇杆（摇杆输出已经是屏幕方向，直接叠加上去）
     dx += mobile.move.x;
     dz += mobile.move.y;
 
@@ -1837,9 +1848,19 @@ function animate() {
         const c = getCell(playerData.pos.x, playerData.pos.z);
         if (c && c.buildable) playerData.pos.y = c.height;
 
-        // 方向存到 userData（用于建造放置 + 精灵朝向）
-        playerGroup.userData.facing = dirFromDelta(dx, dz);
-        playerGroup.userData.facingAngle = Math.atan2(dx, dz);
+        // 精灵朝向（基于摄像机视角，保证面朝方向和屏幕对齐）
+        // dx,dz 是世界坐标增量，投影到相机 forward 和 right 求屏幕方向
+        const screenUp = dx * fwdX + dz * fwdZ;
+        const screenRight = dx * rightX + dz * rightZ;
+        let facingDir;
+        if (Math.abs(screenRight) > Math.abs(screenUp)) {
+            facingDir = screenRight > 0 ? 3 : 1;  // 3=右, 1=左
+        } else {
+            facingDir = screenUp > 0 ? 2 : 0;     // 2=背(远离摄像机), 0=正(面对摄像机)
+        }
+        playerGroup.userData.facing = facingDir;
+        // facingAngle 用于建造放置方向（用相机 forward 角度）
+        playerGroup.userData.facingAngle = Math.atan2(fwdX, fwdZ);
         revealArea(playerData.pos, 7);
         updateLighting();
     } else if (playerGroup) {
