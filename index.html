@@ -1222,7 +1222,8 @@ function setupUI() {
     document.querySelectorAll('.tab').forEach(t => {
         t.addEventListener('click', () => selectTab(t.dataset.tab));
     });
-    document.getElementById('invBtn').addEventListener('click', ()=> selectTab('inv'));
+    const invBtn = document.getElementById('invBtn');
+    if (invBtn) invBtn.addEventListener('click', ()=> selectTab('inv'));
 
     updateUI();
     updateMinimap();
