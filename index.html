@@ -853,29 +853,9 @@ function lerpColor(c1, c2, t) {
 }
 
 function updateFog() {
-    const ctx = scene.userData.fogX;
-    const ws = mapSize*cellSize, sc = 256/ws;
-    // 全黑遮罩（alpha=1 → 完全盖住未探索区域）
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = 'rgba(0,0,0,1)';
-    ctx.fillRect(0,0,256,256);
-    // 已探索：用 destination-out 擦掉 alpha，再按状态叠色
-    for (let x=0;x<mapSize;x++) for (let z=0;z<mapSize;z++) {
-        const c = cells[x][z];
-        if (c.lit || c.revealed) {
-            const cx = (c.wx + ws/2)*sc, cy = (c.wz + ws/2)*sc;
-            const sz = cellSize*sc+2;
-            ctx.globalCompositeOperation = 'destination-out';
-            ctx.fillRect(cx-1, cy-1, sz, sz);
-            if (!c.lit) {
-                // 已探索未点亮 → 叠半透明暗灰（看得见但阴森）
-                ctx.globalCompositeOperation = 'source-over';
-                ctx.fillStyle = 'rgba(40,35,30,0.55)';
-                ctx.fillRect(cx-1, cy-1, sz, sz);
-            }
-        }
-    }
-    scene.userData.fogT.needsUpdate = true;
+    // 迷雾已禁用，直接返回
+    return;
+    // 原代码已移除
 }
 
 function revealArea(pos, r) {
