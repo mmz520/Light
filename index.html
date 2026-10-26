@@ -602,8 +602,7 @@ function showMemoryIntro() { /* 已移除 */ }
 async function init() {
     clock = new THREE.Clock();
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0603);
-    scene.fog = new THREE.FogExp2(0x0a0603, 0.04);
+    scene.background = new THREE.Color(0x2a3038);
 
     camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 500);
     camera.position.set(0, 20, 14);
@@ -776,15 +775,9 @@ function buildWorld() {
     }
     cells._spawn = spawn;
 
-    // 迷雾
-    const fogC = document.createElement('canvas'); fogC.width=256; fogC.height=256;
-    const fogX = fogC.getContext('2d'); fogX.fillStyle='#000'; fogX.fillRect(0,0,256,256);
-    const fogT = new THREE.CanvasTexture(fogC);
-    const fogM = new THREE.MeshBasicMaterial({ map:fogT, transparent:true, depthWrite:false, side:THREE.DoubleSide, blending:THREE.CustomBlending, blendSrc:THREE.ZeroFactor, blendDst:THREE.OneMinusSrcAlphaFactor });
-    const fogG = new THREE.PlaneGeometry(mapSize*cellSize+4, mapSize*cellSize+4);
-    const fog = new THREE.Mesh(fogG, fogM); fog.rotation.x = -Math.PI/2; fog.position.y = 5;
-    scene.add(fog);
-    scene.userData = { fogX, fogT };
+    // 迷雾已移除：直接点亮全图
+    scene.userData.fogX = null;
+    scene.userData.fogT = null;
 }
 
 // 颜色插值（hex → 过渡 → hex）
@@ -797,6 +790,7 @@ function lerpColor(c1, c2, t) {
 
 function updateFog() {
     const ctx = scene.userData.fogX;
+    if (!ctx) return;
     const ws = mapSize*cellSize, sc = 256/ws;
     ctx.fillStyle = '#000'; ctx.fillRect(0,0,256,256);
     for (let x=0;x<mapSize;x++) for (let z=0;z<mapSize;z++) {
@@ -807,7 +801,7 @@ function updateFog() {
             ctx.fillRect(cx-1, cy-1, cellSize*sc+2, cellSize*sc+2);
         }
     }
-    scene.userData.fogT.needsUpdate = true;
+    if (scene.userData.fogT) scene.userData.fogT.needsUpdate = true;
 }
 
 function revealArea(pos, r) {
