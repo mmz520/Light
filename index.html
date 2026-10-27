@@ -21,6 +21,10 @@ canvas{display:block;touch-action:none}
 .start-num-label{position:absolute;bottom:8px;font-size:10px;color:#5a4a2a;letter-spacing:4px;text-transform:uppercase}
 .start-story{max-width:500px;text-align:center;font-size:11px;color:#6a5a3a;line-height:1.8;margin-top:40px;padding:0 20px}
 .start-enter{margin-top:30px;font-size:11px;color:#8b6914;letter-spacing:3px;animation:pulse 1.5s infinite}
+.start-load{display:flex;align-items:center;gap:10px;margin-top:18px;width:220px}
+.start-load-bar{flex:1;height:4px;background:rgba(139,105,20,.2);border-radius:2px;overflow:hidden}
+.start-load-fill{height:100%;width:0;background:#c9a961;border-radius:2px;transition:width .3s;box-shadow:0 0 8px rgba(201,169,97,.6)}
+.start-load-pct{font-size:10px;color:#8b6914;min-width:36px;text-align:right;font-family:monospace}
 .settings-btn{position:absolute;right:20px;bottom:20px;background:rgba(10,6,3,.7);border:1px solid #5a4a2a;color:#c9a961;padding:8px 14px;font-size:12px;cursor:pointer;font-family:inherit;letter-spacing:2px;border-radius:4px;transition:all .2s}
 .settings-btn:hover{background:#8b6914;color:#0a0603}
 
@@ -176,9 +180,11 @@ canvas{display:block;touch-action:none}
 }
 
 @supports (padding:max(0px)){
-    .joystick{left:max(16px,env(safe-area-inset-left));bottom:max(16px,calc(env(safe-area-inset-bottom)+60px))}
-    .mob-btns{right:max(16px,env(safe-area-inset-right));bottom:max(120px,calc(env(safe-area-inset-bottom)+100px))}
-    .bottom-bar{padding-bottom:max(14px,env(safe-area-inset-bottom))}
+    /* 注意：env() 必须带兜底值，否则某些浏览器会把它当作非法值，导致 bottom 回退成 auto，
+       控件被顶到页面左上角（之前摇杆/按钮跑到顶部就是这个原因） */
+    .joystick{left:calc(16px + env(safe-area-inset-left, 0px));bottom:calc(16px + env(safe-area-inset-bottom, 0px))}
+    .mob-btns{right:calc(16px + env(safe-area-inset-right, 0px));bottom:calc(120px + env(safe-area-inset-bottom, 0px))}
+    .bottom-bar{padding-bottom:calc(14px + env(safe-area-inset-bottom, 0px))}
 }
 </style>
 </head>
@@ -191,6 +197,10 @@ canvas{display:block;touch-action:none}
     <div class="start-num-box">
         <div class="start-num" id="sandboxNum">—</div>
         <div class="start-num-label">沙箱编号</div>
+    </div>
+    <div class="start-load" id="startLoad">
+        <div class="start-load-bar"><div class="start-load-fill" id="loadBarFill"></div></div>
+        <div class="start-load-pct" id="loadPct">0%</div>
     </div>
     <div class="start-enter" id="startEnter">点击 / 触屏 进入</div>
     <button class="settings-btn" id="openSettings" title="游戏设置">⚙ 设置</button>
@@ -286,12 +296,34 @@ canvas{display:block;touch-action:none}
     <button class="end-btn" onclick="location.reload()">重启记忆</button>
 </div>
 
-<script type="importmap">
-{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}
+<script>
+// 早期错误捕获：在模块加载之前注册，能捕获 import 失败 / 语法错误 / 运行时异常
+(function () {
+    window.__showFatal = function (title, msg, stack) {
+        var box = document.createElement('div');
+        box.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(10,6,3,.96);color:#ff6666;padding:16px;font:12px/1.6 monospace;white-space:pre-wrap;overflow:auto';
+        box.textContent = '❌ ' + title + '\n' + msg + (stack ? '\n\nStack:\n' + stack : '') + '\n\n（截图这一屏发给开发者）';
+        document.body.appendChild(box);
+    };
+    window.addEventListener('error', function (e) {
+        if (e && e.target && e.target !== window && e.target.tagName === 'SCRIPT') {
+            window.__showFatal('脚本加载失败', e.target.src || '(inline script)');
+            return;
+        }
+        window.__showFatal('运行错误', e.message || (e.error && e.error.message) || String(e),
+            (e.error && e.error.stack) || ((e.filename || '?') + ':' + (e.lineno || '?')));
+    }, true);
+    window.addEventListener('unhandledrejection', function (e) {
+        var r = e.reason;
+        window.__showFatal('Promise 错误', String(r), (r && r.stack) || '');
+    });
+})();
 </script>
 
 <script type="module">
-import * as THREE from 'three';
+// 本地内置 three.js，不依赖任何 CDN（CDN 被墙/超时会直接导致整页黑屏）
+import * as THREE from './vendor/three.module.js';
+window.__threeReady = true;
 
 // ================== 配置 ==================
 const CFG = {
@@ -305,6 +337,69 @@ const CFG = {
     FRAGMENT_SPAWN_CHANCE: 0.04,
     VICTORY_FRAGMENTS: 5
 };
+
+// ===== 精灵表配置 (15列 × 8行, 8个方向 × 15帧) =====
+const SPRITE = {
+    player: { walk:'player_walk.png',  cols:15, rows:8, scaleY:1.4, action:'player_action.png', colsA:15, rowsA:8 },
+    hound:  { walk:'enemy1.png',       cols:15, rows:8, scaleY:1.2 },
+    beast:  { walk:'enemy2.png',       cols:15, rows:8, scaleY:1.6 }
+};
+
+// 精灵贴图缓存
+let spriteTex = { player:{walk:null,action:null}, hound:null, beast:null };
+
+// 预加载所有精灵贴图
+function preloadSprites() {
+    const L = new THREE.TextureLoader();
+    const total = 4;
+    let done = 0;
+    const bump = () => { done++; loadProgress = done / total; updateLoadBar(); };
+    const load = (url) => new Promise(res => {
+        L.load(url, tex => {
+            tex.magFilter = THREE.NearestFilter;
+            tex.minFilter = THREE.NearestFilter;
+            tex.generateMipmaps = false;
+            // 正确标记 sRGB，避免画面发灰/发糊
+            if (THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+            bump();
+            res(tex);
+        }, undefined, () => { bump(); res(null); });
+    });
+    return Promise.all([
+        load(SPRITE.player.walk).then(t => spriteTex.player.walk = t),
+        load(SPRITE.player.action).then(t => spriteTex.player.action = t),
+        load(SPRITE.hound.walk).then(t => spriteTex.hound = t),
+        load(SPRITE.beast.walk).then(t => spriteTex.beast = t)
+    ]);
+}
+
+// 更新开始画面上的加载进度条
+function updateLoadBar() {
+    const bar = document.getElementById('loadBarFill');
+    const pct = document.getElementById('loadPct');
+    if (bar) bar.style.width = (loadProgress * 100).toFixed(0) + '%';
+    if (pct) pct.textContent = (loadProgress * 100).toFixed(0) + '%';
+}
+
+// 8方向映射 (dx, dz) → 0-7
+// 摄像机位于玩家 +Z 方向: 世界 +Z = 屏幕下方, 世界 +X = 屏幕右方
+// 行顺序: DOWN(面对摄像机), DOWN-LEFT, LEFT, UP-LEFT, UP(背对), UP-RIGHT, RIGHT, DOWN-RIGHT
+function dir8(dx, dz) {
+    if (Math.abs(dx) < 0.001 && Math.abs(dz) < 0.001) return -1;
+    const angle = Math.atan2(dx, dz);
+    const idx = Math.round(angle / (Math.PI / 4));
+    return ((-idx % 8) + 8) % 8;
+}
+
+// 更新精灵帧UV
+function updateSpriteUV(state, tex, cols, rows, frameIdx, dirIdx) {
+    if (!tex) return;
+    tex.repeat.set(1 / cols, 1 / rows);
+    tex.offset.x = (frameIdx % cols) / cols;
+    // ImageLoader 默认 flipY=true：纹理 v=0 是图片底部，v=1 是图片顶部
+    // 我们的精灵表行0（图片顶部）= DOWN，需要映射到 offset.y = (rows-1-dirIdx)/rows
+    tex.offset.y = ((rows - 1) - (dirIdx % rows)) / rows;
+}
 
 // ===== 地貌权重（设置页可改，和为 100） =====
 const BIOMES = {
@@ -370,13 +465,23 @@ const BUILDINGS = {
 };
 
 // ================== 全局 ==================
-const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile|Opera Mini|BlackBerry/i.test(navigator.userAgent) || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+// ?mobile=1 可强制启用触屏控件（便于在桌面上验证/给识别不到的手机兜底）
+const FORCE_MOBILE = /[?&]mobile=1/.test(location.search);
+const IS_MOBILE = FORCE_MOBILE
+    || /Android|iPhone|iPad|iPod|Mobile|Opera Mini|BlackBerry/i.test(navigator.userAgent)
+    || ('ontouchstart' in window)
+    || (navigator.maxTouchPoints > 0)
+    || (!!window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
 if (IS_MOBILE) document.body.classList.add('is-mobile');
 
 let scene, camera, renderer, clock;
 let keys = {};
 let gameState = 'start'; // start / opening / playing / victory
+let initReady = false; // init() 是否完成（精灵+世界+首帧）
+let initPromise = null; // 保存 init() 的 Promise，供开始画面等待
+let loadProgress = 0; // 精灵加载进度 0-1
 let gameTime = 0;
+let nextDropTime = 0;
 let sandboxId = 0;
 let memoryPieces = [];
 
@@ -461,15 +566,36 @@ function settingsInit() {
 function rollStartSequence() {
     const numEl = document.getElementById('sandboxNum');
 
-    // 点击/触屏进入 → 沙箱号码滚动 → 地图实际生成 → 睁眼特效 → 进入游戏
-    const start = (e) => {
+    // 点击/触屏进入 → 等待资源就绪 → 沙箱号码滚动 → 地图实际生成 → 睁眼特效 → 进入游戏
+    const start = async (e) => {
         if (gameState !== 'start') return;
         // 不要拦截 settings 弹窗
         if (e && e.target && e.target.closest('#settingsModal')) return;
 
+        const startScreen = document.getElementById('startScreen');
+        const enterEl = document.getElementById('startEnter');
+
+        // 若 init 未完成（精灵图还在加载），先显示加载进度，等首帧就绪再继续
+        if (!initReady) {
+            if (enterEl) enterEl.textContent = '资源加载中…';
+            // 实时刷新百分比
+            const tick = setInterval(() => {
+                if (enterEl && loadProgress < 1) {
+                    enterEl.textContent = '资源加载中 ' + (loadProgress * 100).toFixed(0) + '%';
+                }
+            }, 100);
+            try {
+                await initPromise;
+            } catch (err) {
+                clearInterval(tick);
+                return;
+            }
+            clearInterval(tick);
+            if (enterEl) enterEl.textContent = '点击 / 触屏 进入';
+        }
+
         gameState = 'opening';
         numEl.style.color = '#c9a961';
-        const startScreen = document.getElementById('startScreen');
         startScreen.classList.add('fadeout');
         startScreen.style.pointerEvents = 'none';
 
@@ -504,7 +630,7 @@ function rebuildWorldNow() {
     // 保留玩家引用，清空其模型
     if (playerGroup) { scene.remove(playerGroup); playerGroup = null; }
     // 清空威胁/投放
-    threats.forEach(t => { if (t.mesh) scene.remove(t.mesh); }); threats = [];
+    threats.forEach(t => { scene.remove(t); }); threats = [];
     drops.forEach(d => { scene.remove(d); }); drops = [];
     fragments.forEach(f => { scene.remove(f); }); fragments = [];
     queue = []; projectiles = [];
@@ -549,32 +675,206 @@ function startOpening() {
 
 function showMemoryIntro() { /* 已移除 */ }
 
+// ================== Canvas 2D 降级渲染 ==================
+// 没有 WebGL（虚拟机/远程桌面/沙箱/关闭硬件加速）时，用一个真正会绘制的 2D 渲染器，
+// 保证游戏画面一定可见，而不是只剩 UI。
+function createFallbackRenderer() {
+    const cv = document.createElement('canvas');
+    cv.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;background:#2a3038;z-index:1;touch-action:none';
+    document.body.appendChild(cv);
+    const ctx = cv.getContext('2d');
+
+    let W = window.innerWidth, H = window.innerHeight, dpr = 1;
+    const SX = 30, SY = 22;           // 每个世界单位对应的屏幕像素
+    let camX = 0, camZ = 0;
+
+    function applySize() {
+        cv.width = Math.max(1, Math.floor(W * dpr));
+        cv.height = Math.max(1, Math.floor(H * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        // 精灵图缩小绘制时关闭插值，保持像素清晰（否则会糊）
+        ctx.imageSmoothingEnabled = false;
+    }
+    applySize();
+
+    const hex = c => '#' + (c & 0xffffff).toString(16).padStart(6, '0');
+    const pX = wx => (wx - camX) * SX + W / 2;
+    const pY = (wz, h) => (wz - camZ) * SY + H / 2 - (h || 0) * 12;
+
+    function shadowAt(x, y, r) {
+        ctx.fillStyle = 'rgba(0,0,0,.32)';
+        ctx.beginPath();
+        ctx.ellipse(x, y, r, r * 0.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // 从精灵表里画一帧
+    function drawFrame(tex, cols, rows, frameIdx, dirIdx, wx, wz, worldH) {
+        const img = tex && tex.image;
+        const x = pX(wx), y = pY(wz, 0);
+        if (!img || !img.width || !cols || !rows) {
+            ctx.fillStyle = '#c9a961';
+            ctx.beginPath(); ctx.arc(x, y - 20, 14, 0, Math.PI * 2); ctx.fill();
+            return;
+        }
+        const sw = img.width / cols, sh = img.height / rows;
+        const col = Math.max(0, Math.min(cols - 1, frameIdx | 0));
+        const row = Math.max(0, Math.min(rows - 1, dirIdx | 0));   // 图片第 0 行 = DOWN
+        const hpx = worldH * SY * 2.6;
+        const wpx = hpx * (sw / sh);
+        ctx.drawImage(img, col * sw, row * sh, sw, sh, x - wpx / 2, y - hpx + 6, wpx, hpx);
+    }
+
+    function drawTerrain() {
+        if (!cells.length) return;
+        const halfW = W / 2 / SX + cellSize * 2;
+        const halfH = H / 2 / SY + cellSize * 2;
+        for (let x = 0; x < mapSize; x++) {
+            const row = cells[x];
+            if (!row) continue;
+            for (let z = 0; z < mapSize; z++) {
+                const c = row[z];
+                if (!c) continue;
+                if (Math.abs(c.wx - camX) > halfW || Math.abs(c.wz - camZ) > halfH) continue;
+                const B = BIOMES[c.biome] || BIOMES.grassland;
+                const x0 = pX(c.wx) - cellSize * SX / 2;
+                const y0 = pY(c.wz, c.height) - cellSize * SY / 2;
+                ctx.fillStyle = hex(B.color);
+                ctx.fillRect(x0, y0, cellSize * SX + 1, cellSize * SY + 1);
+                if (c.height > 0.45) {   // 高度差：顶部提亮
+                    ctx.fillStyle = 'rgba(255,255,255,.06)';
+                    ctx.fillRect(x0, y0, cellSize * SX + 1, 4);
+                }
+                if (c.biome === 'ocean') {
+                    ctx.fillStyle = 'rgba(120,190,255,.08)';
+                    ctx.fillRect(x0, y0, cellSize * SX + 1, cellSize * SY + 1);
+                }
+            }
+        }
+    }
+
+    function draw2D() {
+        if (!camera) return;
+        camX = camera.position.x;
+        camZ = camera.position.z - 12;   // 相机在玩家 +Z 方向 12 处
+
+        ctx.fillStyle = '#2a3038';
+        ctx.fillRect(0, 0, W, H);
+        drawTerrain();
+
+        // 收集需要按前后顺序绘制的对象（+Z 更靠近镜头）
+        const list = [];
+        if (playerGroup) list.push({ z: playerGroup.position.z, kind: 'player' });
+        if (typeof threats !== 'undefined') for (const t of threats) list.push({ z: t.position.z, kind: 'threat', o: t });
+        if (typeof drops !== 'undefined') for (const d of drops) list.push({ z: d.position.z, kind: 'drop', o: d });
+        if (typeof fragments !== 'undefined') for (const f of fragments) list.push({ z: f.position.z, kind: 'fragment', o: f });
+        for (const o of scene.children) {
+            if (o.userData && o.userData.build && o.userData.bm && !o.userData.bm.destroyed)
+                list.push({ z: o.position.z, kind: 'building', o });
+        }
+        list.sort((a, b) => a.z - b.z);
+
+        for (const it of list) {
+            if (it.kind === 'player') {
+                const sp = playerGroup.userData.sprite;
+                const x = pX(playerData.pos.x), y = pY(playerData.pos.z, 0);
+                shadowAt(x, y, 20);
+                if (sp) {
+                    const isAction = sp.mat.map === sp.actionTex;
+                    drawFrame(sp.mat.map, isAction ? sp.colsA : sp.cols, isAction ? sp.rowsA : sp.rows,
+                        sp.frameIdx, sp.dirIdx, playerData.pos.x, playerData.pos.z, 1.55);
+                }
+            } else if (it.kind === 'threat') {
+                const o = it.o, u = o.userData;
+                const cfg = SPRITE[u.typeKey] || { cols: 15, rows: 8 };
+                const x = pX(o.position.x), y = pY(o.position.z, 0);
+                shadowAt(x, y, 18);
+                drawFrame(u.mat.map, cfg.cols, cfg.rows, u.frameIdx, u.dirIdx,
+                    o.position.x, o.position.z, u.typeKey === 'beast' ? 1.7 : 1.25);
+                // 血条
+                if (u.hp < u.maxHp) {
+                    ctx.fillStyle = 'rgba(0,0,0,.6)';
+                    ctx.fillRect(x - 18, y - 74, 36, 4);
+                    ctx.fillStyle = '#ff5544';
+                    ctx.fillRect(x - 18, y - 74, 36 * Math.max(0, u.hp / u.maxHp), 4);
+                }
+            } else if (it.kind === 'drop') {
+                const o = it.o, u = o.userData, drop = u.drop;
+                const x = pX(o.position.x), y = pY(o.position.z, o.position.y - o.userData.targetY);
+                const R = RARITY[u.rarity] || RARITY.common;
+                ctx.fillStyle = hex(R.color);
+                ctx.beginPath();
+                ctx.moveTo(x, y - 12); ctx.lineTo(x + 9, y); ctx.lineTo(x, y + 12); ctx.lineTo(x - 9, y);
+                ctx.closePath(); ctx.fill();
+                if (drop && drop.icon) {
+                    ctx.font = '13px serif';
+                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                    ctx.fillText(drop.icon, x, y);
+                }
+            } else if (it.kind === 'fragment') {
+                const x = pX(it.o.position.x), y = pY(it.o.position.z, 0);
+                ctx.fillStyle = '#ffdd66';
+                ctx.beginPath(); ctx.arc(x, y - 14, 9, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = 'rgba(255,221,102,.25)';
+                ctx.beginPath(); ctx.arc(x, y - 14, 18, 0, Math.PI * 2); ctx.fill();
+            } else if (it.kind === 'building') {
+                const o = it.o, bm = o.userData.bm;
+                const def = BUILDINGS[bm.type] || {};
+                const x = pX(o.position.x), y = pY(o.position.z, 0);
+                ctx.fillStyle = 'rgba(0,0,0,.28)';
+                ctx.fillRect(x - 22, y + 2, 44, 10);
+                ctx.fillStyle = '#3a2a1a';
+                ctx.fillRect(x - 20, y - 12, 40, 26);
+                ctx.fillStyle = '#8b6914';
+                ctx.fillRect(x - 20, y - 12, 40, 4);
+                if (def.icon) {
+                    ctx.font = '18px serif';
+                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                    ctx.fillText(def.icon, x, y + 4);
+                }
+            }
+        }
+
+        // 夜幕（轻微）+ 四周暗角
+        const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
+        vg.addColorStop(0, 'rgba(0,0,0,0)');
+        vg.addColorStop(1, 'rgba(0,0,0,.55)');
+        ctx.fillStyle = vg;
+        ctx.fillRect(0, 0, W, H);
+    }
+
+    return {
+        domElement: cv,
+        shadowMap: { enabled: false },
+        is2D: true,
+        setPixelRatio(v) { dpr = Math.min(v || 1, 3); applySize(); },
+        setSize(w, h) { W = w; H = h; applySize(); },
+        render() { draw2D(); }
+    };
+}
+
 // ================== 初始化 ==================
-function init() {
+async function init() {
     clock = new THREE.Clock();
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0a0603);
-    scene.fog = new THREE.FogExp2(0x0a0603, 0.04);
+    scene.background = new THREE.Color(0x2a3038);
 
     camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 500);
     camera.position.set(0, 20, 14);
 
     try {
         renderer = new THREE.WebGLRenderer({ antialias:!IS_MOBILE, powerPreference:IS_MOBILE?'low-power':'high-performance' });
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_MOBILE?1.5:2));
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 3));
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.shadowMap.enabled = !IS_MOBILE;
         renderer.shadowMap.type = IS_MOBILE ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
         renderer.domElement.style.touchAction = 'none';
         document.body.appendChild(renderer.domElement);
     } catch (e) {
-        console.warn('WebGL不可用，使用Canvas降级', e);
-        // 降级：放一个占位黑画布，保证游戏不崩
-        const cv = document.createElement('canvas');
-        cv.width = window.innerWidth; cv.height = window.innerHeight;
-        cv.style.cssText='position:fixed;inset:0;background:#0a0603;pointer-events:none';
-        document.body.appendChild(cv);
-        renderer = { domElement:cv, shadowMap:{enabled:false}, setSize:()=>{}, setPixelRatio:()=>{} };
+        // 没有 WebGL：用真正会绘制的 Canvas 2D 渲染器（不是空壳）
+        console.warn('WebGL不可用，切换 Canvas2D 渲染', e);
+        renderer = createFallbackRenderer();
+        showMsg('未启用 WebGL，已切换 2D 渲染模式', 'info');
     }
 
     scene.add(new THREE.AmbientLight(0x2a2030, 0.4));
@@ -589,11 +889,16 @@ function init() {
         scene.userData.sun = sun;
     } catch(e) { console.warn('方向光创建失败，禁用昼夜循环', e); }
 
+    // 预加载精灵贴图
+    await preloadSprites();
+
     buildWorld();
     // 对齐玩家出生点到实际可建造格
     const sp = cells._spawn || {x:Math.floor(mapSize/2), z:Math.floor(mapSize/2)};
     playerData.pos.set(cells[sp.x][sp.z].wx, cells[sp.x][sp.z].height + 0.6, cells[sp.x][sp.z].wz);
     createPlayer();
+    // 初始摄像机对齐玩家，避免第一帧看不到画面
+    if (camera) camera.position.set(playerData.pos.x, playerData.pos.y + 17, playerData.pos.z + 12);
     createCampfire();
     revealArea(playerData.pos, 8);
 
@@ -615,6 +920,9 @@ function init() {
     if (IS_MOBILE) setupMobile();
 
     animate();
+
+    // 标记 init 完成，开始画面可安全淡出（此时渲染循环已启动，画面不会空白）
+    initReady = true;
 }
 
 function onResize(){ camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth,window.innerHeight); }
@@ -723,15 +1031,9 @@ function buildWorld() {
     }
     cells._spawn = spawn;
 
-    // 迷雾
-    const fogC = document.createElement('canvas'); fogC.width=256; fogC.height=256;
-    const fogX = fogC.getContext('2d'); fogX.fillStyle='#000'; fogX.fillRect(0,0,256,256);
-    const fogT = new THREE.CanvasTexture(fogC);
-    const fogM = new THREE.MeshBasicMaterial({ map:fogT, transparent:true, depthWrite:false, side:THREE.DoubleSide, blending:THREE.CustomBlending, blendSrc:THREE.ZeroFactor, blendDst:THREE.OneMinusSrcAlphaFactor });
-    const fogG = new THREE.PlaneGeometry(mapSize*cellSize+4, mapSize*cellSize+4);
-    const fog = new THREE.Mesh(fogG, fogM); fog.rotation.x = -Math.PI/2; fog.position.y = 5;
-    scene.add(fog);
-    scene.userData = { fogX, fogT };
+    // 迷雾已移除：直接点亮全图
+    scene.userData.fogX = null;
+    scene.userData.fogT = null;
 }
 
 // 颜色插值（hex → 过渡 → hex）
@@ -744,6 +1046,7 @@ function lerpColor(c1, c2, t) {
 
 function updateFog() {
     const ctx = scene.userData.fogX;
+    if (!ctx) return;
     const ws = mapSize*cellSize, sc = 256/ws;
     ctx.fillStyle = '#000'; ctx.fillRect(0,0,256,256);
     for (let x=0;x<mapSize;x++) for (let z=0;z<mapSize;z++) {
@@ -754,7 +1057,7 @@ function updateFog() {
             ctx.fillRect(cx-1, cy-1, cellSize*sc+2, cellSize*sc+2);
         }
     }
-    scene.userData.fogT.needsUpdate = true;
+    if (scene.userData.fogT) scene.userData.fogT.needsUpdate = true;
 }
 
 function revealArea(pos, r) {
@@ -796,23 +1099,78 @@ function getCell(wx,wz) {
 // ================== 玩家 ==================
 function createPlayer() {
     playerGroup = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(.4,.5,1.1,8), new THREE.MeshLambertMaterial({color:0x3a2a1a}));
-    body.position.y=.55; body.castShadow=true; playerGroup.add(body);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(.5,.5,.5), new THREE.MeshLambertMaterial({color:0x8a7a5a}));
-    head.position.y=1.4; head.castShadow=true; playerGroup.add(head);
-    const hat = new THREE.Mesh(new THREE.ConeGeometry(.35,.4,8), new THREE.MeshLambertMaterial({color:0x1a1a1a}));
-    hat.position.y=1.85; playerGroup.add(hat);
-    const goggles = new THREE.Mesh(new THREE.BoxGeometry(.5,.12,.08), new THREE.MeshLambertMaterial({color:0x2a2a2a}));
-    goggles.position.set(0,1.45,.28); playerGroup.add(goggles);
-    const lg = new THREE.Mesh(new THREE.SphereGeometry(.08,8,8), new THREE.MeshBasicMaterial({color:0xff4400}));
-    const rg = lg.clone();
-    lg.position.set(-.11,1.45,.3); rg.position.set(.11,1.45,.3);
-    playerGroup.add(lg,rg);
+
+    // 玩家精灵 —— 用 SpriteMaterial + Sprite
+    const walkTex = spriteTex.player.walk;
+    const actionTex = spriteTex.player.action;
+
+
+    // 如果PNG加载失败，生成占位Canvas精灵
+    let finalWalkTex = walkTex;
+    let finalActionTex = actionTex;
+
+    if (!walkTex) {
+        const cv = document.createElement('canvas');
+        cv.width = 256; cv.height = 256;
+        const ctx = cv.getContext('2d');
+        ctx.fillStyle = '#0a0603';
+        ctx.fillRect(0,0,256,256);
+        // 画个简单的人形
+        ctx.fillStyle = '#c9a961';
+        ctx.fillRect(100,40,56,56); // 头
+        ctx.fillStyle = '#3a2a1a';
+        ctx.fillRect(80,96,96,120); // 身体
+        ctx.fillStyle = '#1a1a1a';
+        ctx.fillRect(96,216,24,40);
+        ctx.fillRect(136,216,24,40);
+        ctx.fillStyle = '#ff4400';
+        ctx.fillRect(108,56,12,12); // 护目镜
+        ctx.fillRect(136,56,12,12);
+        const ct = new THREE.CanvasTexture(cv);
+        ct.flipY = false;
+        ct.magFilter = THREE.NearestFilter;
+        finalWalkTex = ct;
+    }
+    if (!actionTex) finalActionTex = finalWalkTex;
+
+    finalWalkTex.repeat.set(1 / SPRITE.player.cols, 1 / SPRITE.player.rows);
+
+    const mat = new THREE.SpriteMaterial({
+        map: finalWalkTex,
+        transparent: true,
+        depthTest: true,
+        depthWrite: false,
+        blending: THREE.NormalBlending
+    });
+    const sprite = new THREE.Sprite(mat);
+    // 按单元格真实宽高比缩放, 避免拉伸变形
+    const imgP = finalWalkTex && finalWalkTex.image;
+    const aspP = imgP ? (imgP.width / SPRITE.player.cols) / (imgP.height / SPRITE.player.rows) : 0.88;
+    const pw = 1.45;
+    sprite.scale.set(pw, pw / aspP, 1);
+    sprite.position.y = 0.9;
+    playerGroup.add(sprite);
+
+    playerGroup.userData.sprite = {
+        sprite, mat,
+        walkTex: finalWalkTex, actionTex: finalActionTex,
+        cols: SPRITE.player.cols, rows: SPRITE.player.rows,
+        colsA: SPRITE.player.colsA, rowsA: SPRITE.player.rowsA,
+        currentTex: finalWalkTex,
+        frameIdx: 0, dirIdx: 0,
+        frameTime: 0,
+        isWalking: false,
+        isAttacking: false,
+        attackTimer: 0,
+        isCrafting: false,
+        craftTimer: 0
+    };
+
     playerGroup.position.copy(playerData.pos);
     scene.add(playerGroup);
 
     const pl = new THREE.PointLight(0xffaa44, 1.2, 6);
-    pl.position.set(0,2,0);
+    pl.position.set(0, 2, 0);
     playerGroup.add(pl);
     player = playerGroup;
 }
@@ -854,10 +1212,10 @@ function buildStructure(type, pos, instant=false) {
     b.userData.bm = { ...def, hp:def.hp, maxHp:def.hp, type, destroyed:false, atkTimer:0 };
 
     // 通用材质
-    const M = { metal: new THREE.MeshLambertMaterial({color:0x4a4a4a,metalness:.6}),
+    const M = { metal: new THREE.MeshLambertMaterial({color:0x4a4a4a}),
                 wood:  new THREE.MeshLambertMaterial({color:0x5a3a20}),
                 stone: new THREE.MeshLambertMaterial({color:0x6a6a6a}),
-                brass: new THREE.MeshLambertMaterial({color:0x8a6a3a,metalness:.5}) };
+                brass: new THREE.MeshLambertMaterial({color:0x8a6a3a}) };
 
     switch(type){
     case 'campfire':{
@@ -990,6 +1348,13 @@ function tryBuild(type, worldPos) {
 
     for (const [r,a] of Object.entries(def.cost)) playerData.inv[r] -= a;
     buildStructure(type, worldPos);
+    // 播放制作动画(朝建造点)
+    const cst = playerGroup && playerGroup.userData.sprite;
+    if (cst && cst.actionTex) {
+        cst.isCrafting = true;
+        cst.craftTimer = 0.9;
+        cst.dirIdx = dir8(worldPos.x - playerData.pos.x, worldPos.z - playerData.pos.z);
+    }
     showMsg(`开始建造 ${def.name}`, 'info');
     updateUI();
 }
@@ -1035,7 +1400,7 @@ function spawnDrop(cell, drop, rarityKey) {
     const rarity = RARITY[rarityKey];
     const size = .3 + Math.random()*.15;
     const geo = new THREE.BoxGeometry(size,size,size);
-    const mat = new THREE.MeshLambertMaterial({ color: rarity.color, emissive: rarity.color, emissiveIntensity:.3, metalness:.4 });
+    const mat = new THREE.MeshLambertMaterial({ color: rarity.color, emissive: rarity.color, emissiveIntensity:.3 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = !IS_MOBILE;
     g.add(mesh);
@@ -1126,50 +1491,63 @@ function spawnThreat() {
     }
 }
 
+// 敌人模板
+const ENEMY_TYPES = {
+    hound: {
+        name:'暗影机械猎犬',
+        hp:35, dmg:12, spd:4.0, range:1.3, atkSpd:1.8,
+        scaleY:1.0,
+        behavior:'chase',    // 追击冲锋型
+        dash: true,          // 有冲刺
+        dashCd: 3,           // 冲刺冷却
+        dashTimer: 0,
+        dashSpd: 8,
+        dashDur: 0.4
+    },
+    beast: {
+        name:'暗影触手巨兽',
+        hp:120, dmg:25, spd:1.6, range:2.2, atkSpd:0.8,
+        scaleY:1.6,
+        behavior:'slowheavy' // 慢速重击型
+    }
+};
+
 function createThreat(pos) {
     const g = new THREE.Group();
     const roll = Math.random();
-    let stats;
-    if (roll < .4) {
-        stats = { hp:35, dmg:10, spd:3, range:1.5, atkSpd:1.5 };
-        const body = new THREE.Mesh(new THREE.BoxGeometry(.8,.5,1.2), new THREE.MeshLambertMaterial({color:0x1a0a1a}));
-        body.position.y=.4; g.add(body);
-        const head = new THREE.Mesh(new THREE.BoxGeometry(.4,.4,.5), new THREE.MeshLambertMaterial({color:0x1a0a1a}));
-        head.position.set(0,.5,.7); g.add(head);
-        const eye = new THREE.Mesh(new THREE.SphereGeometry(.05,6,6), new THREE.MeshBasicMaterial({color:0xff0000}));
-        const e2 = eye.clone(); e2.position.set(-.1,.55,.95); eye.position.set(.1,.55,.95);
-        g.add(eye,e2);
-        for(let i=0;i<4;i++){
-            const l = new THREE.Mesh(new THREE.BoxGeometry(.12,.3,.12), new THREE.MeshLambertMaterial({color:0x1a0a1a}));
-            l.position.set(i<2?-.3:.3, .15, i%2===0?-.4:.4); g.add(l);
-        }
-    } else if (roll < .75) {
-        stats = { hp:30, dmg:15, spd:2, range:1.8, atkSpd:2 };
-        const body = new THREE.Mesh(new THREE.SphereGeometry(.6,8,8), new THREE.MeshLambertMaterial({color:0x0a050a}));
-        body.position.y=.5; g.add(body);
-        for(let i=0;i<6;i++){
-            const ang = (i/6)*Math.PI*2;
-            const t = new THREE.Mesh(new THREE.CylinderGeometry(.04,.06,.5,4), new THREE.MeshLambertMaterial({color:0x0a050a}));
-            t.position.set(Math.cos(ang)*.4,.3,Math.sin(ang)*.4); t.rotation.x=ang;
-            g.add(t);
-        }
-        const eye = new THREE.Mesh(new THREE.SphereGeometry(.12,8,8), new THREE.MeshBasicMaterial({color:0xff4400}));
-        eye.position.y=.7; g.add(eye);
-    } else {
-        stats = { hp:100, dmg:25, spd:1.4, range:2, atkSpd:1 };
-        const body = new THREE.Mesh(new THREE.BoxGeometry(1.3,1.8,1), new THREE.MeshLambertMaterial({color:0x150815}));
-        body.position.y=.9; g.add(body);
-        const head = new THREE.Mesh(new THREE.BoxGeometry(.7,.7,.7), new THREE.MeshLambertMaterial({color:0x150815}));
-        head.position.y=2.1; g.add(head);
-        for(let i=0;i<2;i++){
-            const h = new THREE.Mesh(new THREE.ConeGeometry(.1,.4,4), new THREE.MeshLambertMaterial({color:0x3a1a3a}));
-            h.position.set(i===0?-.22:.22, 2.6, 0); g.add(h);
-        }
-        const e = new THREE.Mesh(new THREE.SphereGeometry(.08,8,8), new THREE.MeshBasicMaterial({color:0xff0000}));
-        const e2 = e.clone(); e.position.set(-.18,2.2,.35); e2.position.set(.18,2.2,.35);
-        g.add(e,e2);
+    const typeKey = roll < 0.55 ? 'hound' : 'beast';
+    const type = ENEMY_TYPES[typeKey];
+    // 每只敌人克隆一份贴图, 避免多只共享同一 offset 导致帧/方向互相干扰
+    const baseTex = spriteTex[typeKey];
+    const tex = baseTex ? baseTex.clone() : null;
+    if (tex) {
+        tex.needsUpdate = true;
+        tex.repeat.set(1 / SPRITE[typeKey].cols, 1 / SPRITE[typeKey].rows);
     }
-    g.userData = { hp:stats.hp, maxHp:stats.hp, dmg:stats.dmg, spd:stats.spd, range:stats.range, atkSpd:stats.atkSpd, atkT:0, eye:g.children.filter(c=>c.material&&c.material.color&&['#ff0000','#ff4400'].some(x=>c.material.color.getHexString()===x.replace('#','')))[0] };
+
+    const mat = new THREE.SpriteMaterial({
+        map: tex, transparent: true, depthTest: true, depthWrite: false
+    });
+    const sprite = new THREE.Sprite(mat);
+    // 按单元格真实宽高比缩放
+    const imgE = tex && tex.image;
+    const aspE = imgE ? (imgE.width / SPRITE[typeKey].cols) / (imgE.height / SPRITE[typeKey].rows) : 1;
+    const ew = typeKey === 'hound' ? 1.7 : 1.5;
+    sprite.scale.set(ew, ew / aspE, 1);
+    sprite.position.y = typeKey === 'hound' ? 0.7 : 1.0;
+    g.add(sprite);
+
+    g.userData = {
+        typeKey, type, sprite, mat,
+        hp: type.hp, maxHp: type.hp, dmg: type.dmg,
+        spd: type.spd, range: type.range, atkSpd: type.atkSpd,
+        atkT: 0,
+        // 精灵动画
+        frameIdx: 0, dirIdx: 0, frameTime: 0, isMoving: false,
+        // 特殊AI状态
+        dashT: 0, dashCdTimer: 0, dashing: false,
+        moveDir: new THREE.Vector3()
+    };
     g.position.copy(pos);
     scene.add(g);
     return g;
@@ -1177,21 +1555,56 @@ function createThreat(pos) {
 
 // ================== 战斗 & 威胁AI ==================
 function attack() {
-    if (gameState!=='playing' || playerData.attackCd>0) return;
-    playerData.attackCd = .45;
-    let closest=null, cd=2.5;
-    for (const t of threats){
-        if (t.userData.hp<=0) continue;
-        const d = playerData.pos.distanceTo(t.position);
-        if (d<cd){ cd=d; closest=t; }
+    if (gameState !== 'playing' || playerData.attackCd > 0) return;
+    playerData.attackCd = 0.6;
+
+    // 触发攻击动画
+    const st = playerGroup && playerGroup.userData.sprite;
+    if (st && st.actionTex) {
+        st.isAttacking = true;
+        st.attackTimer = 0.5;
+        st.frameIdx = 0;
+        st.frameTime = 0;
+        // 计算面朝方向（锁定最近敌人方向）
+        let lockTarget = null, lockD = 2.5;
+        for (const t of threats) {
+            if (t.userData.hp <= 0) continue;
+            const d = playerData.pos.distanceTo(t.position);
+            if (d < lockD) { lockD = d; lockTarget = t; }
+        }
+        if (lockTarget) {
+            const dx = lockTarget.position.x - playerData.pos.x;
+            const dz = lockTarget.position.z - playerData.pos.z;
+            st.dirIdx = dir8(dx, dz);
+        }
     }
-    if (closest){
-        closest.userData.hp -= 20+Math.random()*10;
-        showDamage(closest.position, 20+Math.random()*10);
-        if (closest.userData.hp<=0){
-            showMsg('击败威胁','success');
+
+    let closest = null, cd = 2.8;
+    for (const t of threats) {
+        if (t.userData.hp <= 0) continue;
+        const d = playerData.pos.distanceTo(t.position);
+        if (d < cd) { cd = d; closest = t; }
+    }
+    if (closest) {
+        const dmg = 20 + Math.random() * 10;
+        closest.userData.hp -= dmg;
+        showDamage(closest.position, dmg);
+        // 击退
+        const kb = new THREE.Vector3().subVectors(closest.position, playerData.pos).normalize().multiplyScalar(0.8);
+        closest.position.x += kb.x;
+        closest.position.z += kb.z;
+        if (closest.userData.hp <= 0) {
+            showMsg('击败威胁', 'success');
             scene.remove(closest);
-            threats = threats.filter(t=>t!==closest);
+            threats = threats.filter(t => t !== closest);
+            // 掉落
+            if (Math.random() < 0.5) {
+                const cell = getCell(closest.position.x, closest.position.z);
+                if (cell) {
+                    const drop = { type:'scrap', amt:1+Math.floor(Math.random()*2) };
+                    spawnDrop(cell, drop, 'common');
+                }
+            }
         }
     }
 }
@@ -1318,8 +1731,8 @@ function updateInvPanel() {
     for (const [k,v] of items){
         const drop = DROP_TABLE.find(d=>d.item===k);
         const isTool = TOOLS[k];
-        const icon = drop?.icon || isTool?.icon || '📦';
-        const label = drop?.label || isTool?.name || resName(k);
+        const icon = (drop && drop.icon) || (isTool && isTool.icon) || '📦';
+        const label = (drop && drop.label) || (isTool && isTool.name) || resName(k);
 
         const card = document.createElement('div');
         card.className = 'inv-card';
@@ -1442,39 +1855,106 @@ function updateMinimap() {
 function setupMobile() {
     const joy = document.getElementById('joystick');
     const knob = document.querySelector('#joystick .knob');
+    const mobBtns = document.getElementById('mobBtns');
+    if (!joy || !knob || !mobBtns) return;
 
-    joy.addEventListener('touchstart', e=>{
-        e.preventDefault();
-        const t = e.changedTouches[0];
-        mobile.jid = t.identifier;
-        mobile.jc = {x:t.clientX, y:t.clientY};
-        updateJoy(t.clientX, t.clientY);
-    }, {passive:false});
-    joy.addEventListener('touchmove', e=>{
-        e.preventDefault();
-        for (const t of e.changedTouches)
-            if (t.identifier===mobile.jid) updateJoy(t.clientX, t.clientY);
-    }, {passive:false});
-    const reset = e => {
-        e.preventDefault();
-        for (const t of e.changedTouches)
-            if (t.identifier===mobile.jid){ mobile.jid=null; mobile.move.x=0; mobile.move.y=0; knob.style.transform='translate(-50%,-50%)'; }
-    };
-    joy.addEventListener('touchend', reset, {passive:false});
-    joy.addEventListener('touchcancel', reset, {passive:false});
+    // 之前代码从未给控件加 .active，CSS 里 display:none 一直生效 —— 这就是移动端无法移动/攻击的根因
+    joy.classList.add('active');
+    mobBtns.classList.add('active');
+    document.body.classList.add('is-mobile');
 
-    function updateJoy(x,y){
-        const dx=x-mobile.jc.x, dy=y-mobile.jc.y, max=50;
-        const d = Math.min(Math.sqrt(dx*dx+dy*dy), max);
-        const ang = Math.atan2(dy,dx);
-        const nx = Math.cos(ang)*(d/max), ny = Math.sin(ang)*(d/max);
-        mobile.move.x = nx; mobile.move.y = ny;
-        knob.style.transform = `translate(calc(-50% + ${nx*max}px), calc(-50% + ${ny*max}px))`;
+    // 把摇杆/攻击按钮定位到底部工具栏之上，避免重叠
+    const bottomBar = document.querySelector('.bottom-bar');
+    function repositionControls() {
+        const h = bottomBar ? bottomBar.offsetHeight : 160;
+        const gap = 16;
+        joy.style.bottom = (h + gap) + 'px';
+        mobBtns.style.bottom = (h + gap) + 'px';
+    }
+    repositionControls();
+    if (window.ResizeObserver && bottomBar) {
+        new ResizeObserver(repositionControls).observe(bottomBar);
+    }
+    window.addEventListener('resize', repositionControls);
+
+    const MAX_R = 50;
+    let pid = null;
+
+    function baseCenter() {
+        const r = joy.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }
+    function applyJoy(x, y) {
+        const c = baseCenter();
+        let dx = x - c.x, dy = y - c.y;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d > MAX_R) { dx = dx / d * MAX_R; dy = dy / d * MAX_R; }
+        const nx = dx / MAX_R, ny = dy / MAX_R;
+        mobile.move.x = nx;
+        mobile.move.y = ny;
+        knob.style.transform = 'translate(calc(-50% + ' + (nx * MAX_R) + 'px), calc(-50% + ' + (ny * MAX_R) + 'px))';
+    }
+    function resetJoy() {
+        pid = null;
+        mobile.jid = null;
+        mobile.move.x = 0;
+        mobile.move.y = 0;
+        knob.style.transform = 'translate(-50%,-50%)';
     }
 
-    document.getElementById('btnAttack').addEventListener('touchstart', e=>{e.preventDefault(); attack();}, {passive:false});
-    document.getElementById('btnPlace').addEventListener('touchstart', e=>{
-        e.preventDefault();
+    if (window.PointerEvent) {
+        // 现代手机统一用 Pointer Events（触屏 + 鼠标都能用）
+        joy.addEventListener('pointerdown', e => {
+            e.preventDefault();
+            pid = e.pointerId;
+            mobile.jid = e.pointerId;
+            try { joy.setPointerCapture(pid); } catch (err) {}
+            applyJoy(e.clientX, e.clientY);
+        }, { passive: false });
+        joy.addEventListener('pointermove', e => {
+            if (e.pointerId !== pid) return;
+            e.preventDefault();
+            applyJoy(e.clientX, e.clientY);
+        }, { passive: false });
+        const end = e => { if (e.pointerId === pid) resetJoy(); };
+        joy.addEventListener('pointerup', end);
+        joy.addEventListener('pointercancel', end);
+        joy.addEventListener('lostpointercapture', end);
+    } else {
+        // 旧设备回退到 touch 事件
+        joy.addEventListener('touchstart', e => {
+            e.preventDefault();
+            const t = e.changedTouches[0];
+            pid = t.identifier;
+            mobile.jid = t.identifier;
+            applyJoy(t.clientX, t.clientY);
+        }, { passive: false });
+        joy.addEventListener('touchmove', e => {
+            e.preventDefault();
+            for (const t of e.changedTouches)
+                if (t.identifier === pid) applyJoy(t.clientX, t.clientY);
+        }, { passive: false });
+        const reset = e => {
+            e.preventDefault();
+            for (const t of e.changedTouches)
+                if (t.identifier === pid) resetJoy();
+        };
+        joy.addEventListener('touchend', reset, { passive: false });
+        joy.addEventListener('touchcancel', reset, { passive: false });
+    }
+
+    function bindTap(el, fn) {
+        if (!el) return;
+        if (window.PointerEvent) {
+            el.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); fn(); }, { passive: false });
+        } else {
+            el.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); fn(); }, { passive: false });
+            el.addEventListener('mousedown', e => { e.preventDefault(); fn(); });
+        }
+    }
+
+    bindTap(document.getElementById('btnAttack'), attack);
+    bindTap(document.getElementById('btnPlace'), () => {
         if (!playerData.currentBuild){
             const seq = ['torch','lantern','wall','spike','cannon','watchtower','workshop','bed'];
             const i = Math.floor(Math.random()*seq.length);
@@ -1485,7 +1965,7 @@ function setupMobile() {
         target.x += Math.cos(playerGroup.rotation.y)*4;
         target.z += Math.sin(playerGroup.rotation.y)*4;
         tryBuild(playerData.currentBuild, target);
-    }, {passive:false});
+    });
 
     // 画面tap放置
     let tStart = null;
@@ -1526,12 +2006,13 @@ function animate() {
 
     // 昼夜（WebGL 降级时 sun 可能不存在）
     const sun = scene.userData.sun;
+    let night = false;
     if (sun) {
         const prog = (gameTime % CFG.DAY_LEN) / CFG.DAY_LEN;
         sun.position.x = Math.cos(prog*Math.PI*2)*45;
         sun.position.y = Math.sin(prog*Math.PI*2)*45;
         sun.position.z = 20;
-        const night = sun.position.y < 0;
+        night = sun.position.y < 0;
         sun.intensity = night ? 0.15 : 0.8;
     }
 
@@ -1568,12 +2049,83 @@ function animate() {
         const c = getCell(playerData.pos.x, playerData.pos.z);
         if (c && c.buildable) playerData.pos.y = c.height;
 
-        playerGroup.rotation.y = Math.atan2(dx, dz);
+        // 旧: playerGroup.rotation.y = Math.atan2(dx, dz);  ← 不再旋转，用8方向精灵
+        const sp = playerGroup.userData.sprite;
+        if (sp) {
+            sp.dirIdx = dir8(dx, dz);
+            sp.isWalking = true;
+        }
         revealArea(playerData.pos, 7);
         updateLighting();
+    } else {
+        // 不动时保持最后方向
+        const sp = playerGroup.userData.sprite;
+        if (sp) sp.isWalking = false;
     }
 
+    // 玩家精灵帧动画更新
     if (playerGroup) {
+        const sp = playerGroup.userData.sprite;
+        if (sp) {
+            sp.frameTime += dt;
+
+            // 制作动画 (action 表第4帧: 蹲下施工)
+            if (sp.isCrafting) {
+                sp.craftTimer -= dt;
+                if (sp.mat.map !== sp.actionTex && sp.actionTex) {
+                    sp.mat.map = sp.actionTex;
+                    sp.mat.needsUpdate = true;
+                }
+                sp.frameIdx = sp.colsA - 1;
+                if (sp.craftTimer <= 0) {
+                    sp.isCrafting = false;
+                    sp.frameIdx = 0;
+                    sp.frameTime = 0;
+                    if (sp.mat.map !== sp.walkTex && sp.walkTex) {
+                        sp.mat.map = sp.walkTex;
+                        sp.mat.needsUpdate = true;
+                    }
+                }
+                updateSpriteUV(sp, sp.mat.map, sp.colsA, sp.rowsA, sp.frameIdx, sp.dirIdx);
+            }
+            // 攻击动画
+            else if (sp.isAttacking) {
+                sp.attackTimer -= dt;
+                // 切换到 action 精灵表
+                if (sp.mat.map !== sp.actionTex && sp.actionTex) {
+                    sp.mat.map = sp.actionTex;
+                    sp.mat.needsUpdate = true;
+                }
+                const WALK_FPS = 10;
+                sp.frameIdx = Math.floor(sp.frameTime * WALK_FPS) % sp.colsA;
+                if (sp.attackTimer <= 0) {
+                    sp.isAttacking = false;
+                    sp.frameIdx = 0;
+                    sp.frameTime = 0;
+                    // 切回 walk 精灵表
+                    if (sp.mat.map !== sp.walkTex && sp.walkTex) {
+                        sp.mat.map = sp.walkTex;
+                        sp.mat.needsUpdate = true;
+                    }
+                }
+                updateSpriteUV(sp, sp.mat.map, sp.isAttacking ? sp.colsA : sp.cols, sp.isAttacking ? sp.rowsA : sp.rows, sp.frameIdx, sp.dirIdx);
+            } else {
+                // 行走/待机动画
+                if (sp.mat.map !== sp.walkTex && sp.walkTex) {
+                    sp.mat.map = sp.walkTex;
+                    sp.mat.needsUpdate = true;
+                }
+                if (sp.isWalking) {
+                    const WALK_FPS = 10;
+                    sp.frameIdx = Math.floor(sp.frameTime * WALK_FPS) % sp.cols;
+                } else {
+                    // 待机: 停在第 0 帧 (空闲姿态)
+                    sp.frameIdx = 0;
+                }
+                updateSpriteUV(sp, sp.mat.map, sp.cols, sp.rows, sp.frameIdx, sp.dirIdx);
+            }
+        }
+
         playerGroup.position.copy(playerData.pos);
         playerGroup.position.y += Math.sin(gameTime*5)*.04*moved;
     }
@@ -1609,7 +2161,7 @@ function animate() {
         if (Math.random() < 0.7) spawnThreat();
     }
 
-    // 威胁AI
+    // 威胁AI（固定攻击模式）
     for (let i=threats.length-1; i>=0; i--){
         const t = threats[i];
         const u = t.userData;
@@ -1617,41 +2169,75 @@ function animate() {
         const cell = getCell(t.position.x, t.position.z);
         const inLight = cell && cell.lit;
 
-        let target=null, tp=null, td=Infinity;
+        // 只追玩家（简化）
         const pd = t.position.distanceTo(playerData.pos);
-        if (pd<td){ td=pd; target='player'; tp=playerData.pos; }
-        // 建筑也吸引威胁
-        scene.traverse(o=>{
-            if (o.userData.build && o.userData.bm && !o.userData.bm.destroyed && (o.userData.bm.blocks || o.userData.bm.trap)){
-                const d = t.position.distanceTo(o.position);
-                if (d<15 && d<td){ td=d; target=o; tp=o.position; }
+        const dir = new THREE.Vector3().subVectors(playerData.pos, t.position);
+        const dirLen = dir.length();
+        if (dirLen > 0.01) dir.divideScalar(dirLen);
+
+        let spd = inLight ? u.spd*0.4 : u.spd;
+
+        // ===== 固定攻击模式 =====
+        if (u.typeKey === 'hound') {
+            // 猎犬：追击 + 定时冲刺
+            u.dashCdTimer -= dt;
+            if (u.dashing) {
+                u.dashT -= dt;
+                if (u.dashT <= 0) { u.dashing = false; spd = u.spd; }
+                else spd = u.type.dashSpd;
+            } else if (u.type.dash && u.dashCdTimer <= 0 && pd > 4 && pd < 15) {
+                // 触发冲刺
+                u.dashing = true;
+                u.dashT = u.type.dashDur;
+                u.dashCdTimer = u.type.dashCd;
             }
-        });
-        if (tp){
-            const dir = new THREE.Vector3().subVectors(tp, t.position).normalize();
-            const spd = inLight ? u.spd*0.4 : u.spd;
-            t.position.x += dir.x*spd*dt;
-            t.position.z += dir.z*spd*dt;
-            t.rotation.y = Math.atan2(dir.x, dir.z);
-            u.atkT -= dt;
-            if (u.atkT<=0 && td<u.range){
-                u.atkT = 1/u.atkSpd;
-                if (target==='player'){
-                    playerData.hp -= u.dmg;
-                    showMsg(`受到 ${u.dmg} 伤害！`,'warn');
-                } else {
-                    target.userData.bm.hp -= u.dmg;
-                    if (target.userData.bm.hp<=0){
-                        target.userData.bm.destroyed = true;
-                        scene.remove(target);
-                        const c = getCell(target.position.x, target.position.z);
-                        if (c) c.building=null;
-                        showMsg('建筑被摧毁！','warn');
-                        updateLighting();
-                    }
-                }
-            }
+        } else if (u.typeKey === 'beast') {
+            // 巨兽：慢速逼近，近距离重击
+            spd = inLight ? u.spd*0.3 : u.spd;
+            if (pd < u.range + 0.5 && pd > u.range - 0.5) spd = 0.3; // 到位后微停
         }
+
+        // 移动（不超出范围才冲）
+        if (pd > 0.5) {
+            u.moveDir.copy(dir);
+            u.isMoving = true;
+            t.position.x += dir.x * spd * dt;
+            t.position.z += dir.z * spd * dt;
+        } else {
+            u.isMoving = false;
+        }
+
+        // 攻击
+        u.atkT -= dt;
+        if (u.atkT <= 0 && pd < u.range) {
+            u.atkT = 1 / u.atkSpd;
+            const dmgVar = u.typeKey === 'beast' ? 0 : 4; // 巨兽固定25，猎犬有波动
+            const actualDmg = u.dmg + (dmgVar > 0 ? (Math.random()*dmgVar) : 0);
+            playerData.hp -= actualDmg;
+            showDamage(playerData.pos, actualDmg);
+            // 巨兽特殊：范围震动
+            if (u.typeKey === 'beast' && pd < u.range) {
+                // 击退玩家
+                const kb = dir.clone().multiplyScalar(0.5);
+                playerData.pos.x += kb.x;
+                playerData.pos.z += kb.z;
+            }
+            showMsg(`受到 ${Math.round(actualDmg)} 伤害！`, 'warn');
+        }
+
+        // 敌人精灵帧动画更新
+        if (u.moveDir) {
+            u.dirIdx = dir8(u.moveDir.x, u.moveDir.z);
+        }
+        u.frameTime += dt;
+        if (u.isMoving) {
+            const WALK_FPS = u.typeKey === 'hound' ? 10 : 5;
+            u.frameIdx = Math.floor(u.frameTime * WALK_FPS) % SPRITE[u.typeKey].cols;
+        } else {
+            const IDLE_FPS = 1;
+            u.frameIdx = Math.floor(u.frameTime * IDLE_FPS) % 2;
+        }
+        updateSpriteUV(u, u.mat.map, SPRITE[u.typeKey].cols, SPRITE[u.typeKey].rows, u.frameIdx, u.dirIdx);
     }
 
     // 炮台
@@ -1742,10 +2328,10 @@ function animate() {
     }
 
     // 系统定时投放（随机间隔）
-    if (!gameTime._nextSpawn) gameTime._nextSpawn = gameTime + CFG.SPAWN_INTERVAL + Math.random()*3;
-    if (gameTime > gameTime._nextSpawn){
+    if (nextDropTime === 0) nextDropTime = gameTime + CFG.SPAWN_INTERVAL + Math.random()*3;
+    if (gameTime > nextDropTime){
         rollDrop();
-        gameTime._nextSpawn = gameTime + CFG.SPAWN_INTERVAL + Math.random()*4;
+        nextDropTime = gameTime + CFG.SPAWN_INTERVAL + Math.random()*4;
     }
 
     // 玩家状态衰减
@@ -1782,7 +2368,7 @@ function endGame(result) {
     const stats = document.getElementById('vicStats');
     if (result === 'victory'){
         const days = Math.floor(gameTime / CFG.DAY_LEN) + 1;
-        const built = scene.children.filter(o=>o.userData.build && !o.userData.bm?.destroyed).length;
+        const built = scene.children.filter(o=>o.userData.build && o.userData.bm && !o.userData.bm.destroyed).length;
         stats.innerHTML = `在沙箱 ${sandboxId} 中生存了 ${days} 天<br>建造: ${built} 座设施 | 收集: ${memoryPieces.length} 记忆碎片`;
     } else {
         document.querySelector('#vicScreen .victory-title').textContent = '意识湮灭';
@@ -1794,36 +2380,17 @@ function endGame(result) {
 }
 
 // ================== 启动 ==================
-// 全局错误捕获（调试用）
-window.addEventListener('error', e => {
-    const box = document.createElement('div');
-    box.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(10,6,3,.95);color:#ff6666;padding:20px;font:12px monospace;white-space:pre-wrap;overflow:auto';
-    box.textContent = '❌ JS ERROR\n' + (e.message||e.error?.message||String(e)) + '\n\nStack:\n' + (e.error?.stack||e.filename+':'+e.lineno);
-    document.body.appendChild(box);
-});
-window.addEventListener('unhandledrejection', e => {
-    const box = document.createElement('div');
-    box.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(10,6,3,.95);color:#ff6666;padding:20px;font:12px monospace;white-space:pre-wrap;overflow:auto';
-    box.textContent = '❌ PROMISE ERROR\n' + String(e.reason);
-    document.body.appendChild(box);
-});
+// 错误捕获统一由页面头部的早期脚本负责（window.__showFatal）
 
 requestAnimationFrame(()=>{
-    // UI 优先：保证设置面板和开始按钮在任何 WebGL 错误前都能工作
     try { settingsInit(); } catch(e) { console.warn('settingsInit failed', e); }
 
-    try {
-        clock = new THREE.Clock();
-        init();
-    } catch(err) {
-        console.error('INIT FAILED:', err);
-        const box = document.createElement('div');
-        box.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(10,6,3,.95);color:#ff6666;padding:20px;font:12px monospace;white-space:pre-wrap;overflow:auto';
-        box.textContent = '❌ INIT FAILED\n' + err.message + '\n\nStack:\n' + err.stack;
-        document.body.appendChild(box);
-    }
+    clock = new THREE.Clock();
+    initPromise = init().catch(err => {
+        console.error('INIT FAILED (async):', err);
+        if (window.__showFatal) window.__showFatal('初始化失败', err.message || String(err), err.stack || '');
+    });
 
-    // 不管 init 是否成功，都绑定开始按钮（保底）
     try { rollStartSequence(); } catch(e) { console.warn('rollStartSequence failed', e); }
 });
 </script>
