@@ -30,24 +30,29 @@ body{margin:0;background:#1a1d24;color:#e0d8c8;font-family:system-ui,-apple-syst
 #panel button.ghost{background:#3a3f48;color:#e0d8c8}
 #panel button.ghost:hover{background:#4a4f58}
 
-/* 预设按钮 */
-.presets{display:grid;grid-template-columns:1fr 1fr;gap:4px}
-.presets button{font-size:11px;padding:6px 8px;margin:0}
-.presets button.active{background:#c9a961;outline:2px solid #ffdd66}
-
 /* ========== 右侧画布区 ========== */
-#stage{flex:1;background:#0d0f14;display:flex;flex-direction:column}
-#canvasWrap{flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
-canvas{max-width:100%;max-height:100%;image-rendering:auto;box-shadow:0 0 40px rgba(0,0,0,.5);background:#2a2a30}
+#stage{flex:1;min-width:0;background:#0d0f14;display:flex;flex-direction:column}
+#canvasWrap{flex:1;display:flex;position:relative;overflow:auto;padding:20px}
+canvas{margin:auto;box-shadow:0 0 40px rgba(0,0,0,.5);background:#2a2a30}
 
 /* 底部控制栏 */
 #controls{background:#23272f;border-top:1px solid #3a3f48;padding:10px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
-#controls label{font-size:12px;color:#a8a090}
-#controls input[type="range"]{width:150px;vertical-align:middle}
+#controls label{font-size:12px;color:#a8a090;display:flex;align-items:center;gap:6px}
+#controls input[type="range"]{width:130px;vertical-align:middle}
+#controls input[type="checkbox"]{margin:0;cursor:pointer}
 #info{font-size:11px;color:#6a5a3a;margin-left:auto;font-family:monospace}
 .play-btn{padding:6px 14px;background:#c9a961;border:none;border-radius:4px;color:#1a1d24;font-weight:bold;cursor:pointer}
 .play-btn:hover{background:#ffdd66}
 .frame-label{font-size:12px;color:#c9a961;font-family:monospace;min-width:50px;text-align:center}
+#fpsVal{font-size:12px;color:#c9a961;font-family:monospace;min-width:34px;text-align:right}
+
+/* 网格缩放控件 */
+#zoomCtl{display:none;align-items:center;gap:6px;border-left:1px solid #3a3f48;padding-left:12px}
+#zoomCtl.show{display:flex}
+.zoom-btn{width:26px;height:26px;padding:0;background:#3a3f48;border:1px solid #4a4f58;border-radius:4px;color:#e0d8c8;font-size:14px;line-height:1;cursor:pointer}
+.zoom-btn:hover{background:#4a4f58}
+#zoomPct{font-size:12px;color:#c9a961;font-family:monospace;min-width:50px;text-align:center;cursor:pointer;user-select:none}
+#zoomPct:hover{color:#ffdd66}
 
 /* 帧网格覆盖层 */
 #gridOverlay{position:absolute;pointer-events:none;border:1px solid rgba(201,169,97,.4)}
@@ -67,17 +72,7 @@ canvas{max-width:100%;max-height:100%;image-rendering:auto;box-shadow:0 0 40px r
     <input type="text" id="urlInput" placeholder="player_walk8.jpg">
     <button onclick="loadUrl()">加载路径</button>
 
-    <h2>2. 预设模板（一键适配）</h2>
-    <div class="presets">
-        <button data-preset="walk8">8方向行走</button>
-        <button data-preset="attack8">8方向攻击</button>
-        <button data-preset="idle">原地站立</button>
-        <button data-preset="build">原地建造</button>
-        <button data-preset="craft">原地制作</button>
-        <button data-preset="custom">自定义</button>
-    </div>
-
-    <h2>3. 帧配置</h2>
+    <h2>2. 帧配置</h2>
     <div class="row">
         <div><label>偏移 X</label><input type="number" id="offX" value="40"></div>
         <div><label>偏移 Y</label><input type="number" id="offY" value="0"></div>
@@ -92,14 +87,12 @@ canvas{max-width:100%;max-height:100%;image-rendering:auto;box-shadow:0 0 40px r
     </div>
     <button onclick="applyConfig()">应用配置</button>
 
-    <h2>4. 播放控制</h2>
+    <h2>3. 播放控制</h2>
     <div class="row">
-        <div><label>FPS</label><input type="number" id="fps" value="10" min="1" max="60"></div>
-        <div><label>方向行 (0-{rows-1})</label><input type="number" id="rowSel" value="0"></div>
+        <div><label>方向行</label><input type="number" id="rowSel" value="0"></div>
+        <div><label>起始帧</label><input type="number" id="startFrame" value="0" min="0"></div>
+        <div><label>结束帧</label><input type="number" id="endFrame" value="14" min="0"></div>
     </div>
-    <label>起始帧 <input type="number" id="startFrame" value="0" min="0"></label>
-    <label>结束帧 <input type="number" id="endFrame" value="14" min="0"></label>
-    <label><input type="checkbox" id="loop" checked> 循环播放</label>
     <label>显示模式</label>
     <select id="mode">
         <option value="single">单帧（当前选中）</option>
@@ -111,7 +104,7 @@ canvas{max-width:100%;max-height:100%;image-rendering:auto;box-shadow:0 0 40px r
     <button class="ghost" onclick="prevFrame()">◀ 上一帧</button>
     <button class="ghost" onclick="nextFrame()">下一帧 ▶</button>
 
-    <h2>5. 显示选项</h2>
+    <h2>4. 显示选项</h2>
     <label><input type="checkbox" id="showGrid" checked> 显示网格线</label>
     <label><input type="checkbox" id="scaleTo" checked> 自动缩放适配画布</label>
 </div>
@@ -124,9 +117,16 @@ canvas{max-width:100%;max-height:100%;image-rendering:auto;box-shadow:0 0 40px r
     <div id="controls">
         <button class="play-btn" id="playBtn2" onclick="togglePlay()">▶ 播放</button>
         <span class="frame-label" id="frameLabel">帧 0 / 14</span>
-        <label>FPS
-            <input type="range" id="fpsRange" min="1" max="30" value="10" oninput="document.getElementById('fps').value=this.value">
+        <label>速度
+            <input type="range" id="fpsRange" min="1" max="60" value="10">
+            <span id="fpsVal">10</span>fps
         </label>
+        <label><input type="checkbox" id="loopChk" checked>循环</label>
+        <div id="zoomCtl">
+            <button class="zoom-btn" onclick="zoomOut()" title="缩小">−</button>
+            <span id="zoomPct" onclick="zoomReset()" title="点击重置为100%">100%</span>
+            <button class="zoom-btn" onclick="zoomIn()" title="放大">+</button>
+        </div>
         <span id="info">未加载图片</span>
     </div>
 </div>
@@ -141,16 +141,8 @@ let cfg = { offX:40, offY:0, fw:280, fh:350, cols:15, rows:8, row:0, start:0, en
 let currentFrame = 0;
 let playing = false;
 let lastTick = 0;
-
-// ========= 预设 =========
-const PRESETS = {
-    walk8:   { offX:40,  offY:0, fw:280, fh:350, cols:15, rows:8,  row:0, start:0,  end:14 },
-    attack8: { offX:40,  offY:0, fw:280, fh:350, cols:15, rows:8,  row:0, start:0,  end:14 },
-    idle:    { offX:0,   offY:0, fw:300, fh:550, cols:15, rows:1,  row:0, start:0,  end:14 },
-    build:   { offX:0,   offY:0, fw:300, fh:550, cols:15, rows:1,  row:0, start:0,  end:14 },
-    craft:   { offX:0,   offY:0, fw:300, fh:550, cols:15, rows:1,  row:0, start:0,  end:14 },
-    custom:  { offX:40,  offY:0, fw:280, fh:350, cols:15, rows:8,  row:0, start:0,  end:14 }
-};
+let gridZoom = 1;                 // 网格模式缩放倍率（1 = 自适应铺满）
+const ZOOM_MIN = 0.2, ZOOM_MAX = 8;
 
 // 方向名称（从上到下）
 const DIRS = ['DOWN','DOWN-LEFT','LEFT','UP-LEFT','UP','UP-RIGHT','RIGHT','DOWN-RIGHT'];
@@ -173,6 +165,7 @@ function loadUrl(){
 function loadImage(src){
     img.onload = () => {
         imgLoaded = true;
+        gridZoom = 1;
         document.getElementById('info').textContent = `图片: ${img.naturalWidth}×${img.naturalHeight}`;
         // 自动推断最佳帧尺寸
         autoDetectFrame();
@@ -184,7 +177,7 @@ function loadImage(src){
     img.src = src;
 }
 
-// 自动检测帧尺寸（尝试匹配最接近的预设）
+// 自动检测帧尺寸（按宽高比推断行列，作为初始值，可手动微调）
 function autoDetectFrame(){
     const W = img.naturalWidth, H = img.naturalHeight;
     if(H >= W * 0.5) {
@@ -201,32 +194,6 @@ function autoDetectFrame(){
         const fh = Math.floor(H);
         updateFields({ offX:0, offY:0, fw, fh, cols:15, rows:1 });
     }
-}
-
-// ========= 预设应用 =========
-document.querySelectorAll('.presets button').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-        document.querySelectorAll('.presets button').forEach(b=>b.classList.remove('active'));
-        btn.classList.add('active');
-        applyPreset(btn.dataset.preset);
-    });
-});
-function applyPreset(key){
-    const p = PRESETS[key] || PRESETS.custom;
-    updateFields(p);
-    if(imgLoaded){
-        // 重新计算：如果图片尺寸已知，按比例算 fw/fh
-        if(p.rows > 1){
-            const usableW = img.naturalWidth - p.offX;
-            p.fw = Math.floor(usableW / p.cols);
-            p.fh = Math.floor(img.naturalHeight / p.rows);
-        } else {
-            p.fw = Math.floor(img.naturalWidth / p.cols);
-            p.fh = Math.floor(img.naturalHeight);
-        }
-        updateFields(p);
-    }
-    render();
 }
 
 function updateFields(obj){
@@ -248,8 +215,9 @@ function readFields(){
     cfg.row   = Math.max(0, Math.min(cfg.rows-1, +document.getElementById('rowSel').value || 0));
     cfg.start = +document.getElementById('startFrame').value || 0;
     cfg.end   = Math.max(cfg.start, +document.getElementById('endFrame').value || cfg.cols-1);
-    cfg.loop  = document.getElementById('loop').checked;
-    cfg.fps   = +document.getElementById('fps').value || 10;
+    cfg.loop  = document.getElementById('loopChk').checked;
+    cfg.fps   = +document.getElementById('fpsRange').value || 10;
+    document.getElementById('fpsVal').textContent = cfg.fps;
     document.getElementById('rowSel').value = cfg.row;
     document.getElementById('startFrame').value = cfg.start;
     document.getElementById('endFrame').value = cfg.end;
@@ -286,8 +254,9 @@ function fitCanvas(w, h){
 function computeFittedSize(maxW, maxH){
     if(!imgLoaded) return [cfg.fw, cfg.fh];
     const wrap = document.getElementById('canvasWrap');
-    const W = wrap.clientWidth - 40;
-    const H = wrap.clientHeight - 40;
+    // 用 offsetWidth/offsetHeight（不受滚动条有无影响）保证缩放基准稳定
+    const W = Math.max(1, wrap.offsetWidth - 40);
+    const H = Math.max(1, wrap.offsetHeight - 40);
     const srcW = cfg.fw, srcH = cfg.fh;
     const scale = Math.min(W/srcW, H/srcH, 2); // 上限2倍
     return [Math.floor(srcW*scale), Math.floor(srcH*scale)];
@@ -301,6 +270,7 @@ function render(){
         ctx.font = '16px monospace';
         ctx.textAlign='center';
         ctx.fillText('请加载精灵图', cv.width/2, cv.height/2);
+        updateZoomUI();
         return;
     }
     readFields();
@@ -313,14 +283,15 @@ function render(){
                     Math.min(cfg.cols-1, Math.max(0, currentFrame));
         drawFrameAt(w, h, col, cfg.row);
     } else if(mode === 'grid'){
-        // 整张网格预览
+        // 整张网格预览（支持缩放）
         const W = cfg.fw * cfg.cols;
         const H = cfg.fh * cfg.rows;
         const wrap = document.getElementById('canvasWrap');
-        const maxW = wrap.clientWidth - 40;
-        const maxH = wrap.clientHeight - 40;
-        const scale = Math.min(maxW/W, maxH/H);
-        fitCanvas(Math.floor(W*scale), Math.floor(H*scale));
+        const maxW = Math.max(1, wrap.offsetWidth - 40);
+        const maxH = Math.max(1, wrap.offsetHeight - 40);
+        const fitScale = Math.min(maxW/W, maxH/H);   // 1 倍 = 自适应铺满
+        const scale = fitScale * gridZoom;
+        fitCanvas(Math.max(1, Math.round(W*scale)), Math.max(1, Math.round(H*scale)));
         ctx.drawImage(img, cfg.offX, cfg.offY, W, H, 0, 0, cv.width, cv.height);
     } else if(mode === 'rows'){
         // 8方向对比展示：同一列帧，所有方向行
@@ -329,8 +300,8 @@ function render(){
         const W = cfg.fw;
         const H = cfg.fh;
         const wrap = document.getElementById('canvasWrap');
-        const maxW = wrap.clientWidth - 40;
-        const maxH = wrap.clientHeight - 40;
+        const maxW = Math.max(1, wrap.offsetWidth - 40);
+        const maxH = Math.max(1, wrap.offsetHeight - 40);
         // 每行放一帧，横向排列
         const totalH = H * nrows;
         const totalW = W;
@@ -368,6 +339,31 @@ function render(){
     }
 
     updateFrameLabel();
+    updateZoomUI();
+}
+
+// ========= 网格缩放 =========
+function clampZoom(z){
+    return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+}
+function zoomIn(){
+    gridZoom = clampZoom(gridZoom * 1.25);
+    render();
+}
+function zoomOut(){
+    gridZoom = clampZoom(gridZoom / 1.25);
+    render();
+}
+function zoomReset(){
+    gridZoom = 1;
+    render();
+}
+function updateZoomUI(){
+    const isGrid = document.getElementById('mode').value === 'grid';
+    document.getElementById('zoomCtl').classList.toggle('show', isGrid);
+    document.getElementById('zoomPct').textContent = Math.round(gridZoom*100) + '%';
+    document.getElementById('zoomPct').style.color =
+        gridZoom === 1 ? '#8b6914' : '#c9a961';
 }
 
 function updateFrameLabel(){
@@ -433,13 +429,30 @@ document.addEventListener('keydown', e=>{
 });
 
 // 实时响应控件变化
-['fps','rowSel','startFrame','endFrame','cols','rows'].forEach(id=>{
+['rowSel','startFrame','endFrame','cols','rows'].forEach(id=>{
     document.getElementById(id).addEventListener('input', ()=>{
         readFields();
         if(currentFrame > cfg.end) currentFrame = cfg.start;
         render();
     });
 });
+// 播放速度（实时生效）
+document.getElementById('fpsRange').addEventListener('input', ()=>{
+    readFields();
+});
+// 循环开关
+document.getElementById('loopChk').addEventListener('change', ()=>{
+    readFields();
+});
+// 网格模式：Ctrl/Cmd + 滚轮缩放（普通滚轮保留原生滚动）
+document.getElementById('canvasWrap').addEventListener('wheel', e=>{
+    if(document.getElementById('mode').value !== 'grid') return;
+    if(!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    gridZoom = clampZoom(e.deltaY < 0 ? gridZoom * 1.15 : gridZoom / 1.15);
+    render();
+}, {passive:false});
+
 document.getElementById('mode').addEventListener('change', render);
 document.getElementById('showGrid').addEventListener('change', render);
 window.addEventListener('resize', render);
