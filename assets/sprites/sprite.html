@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sprite Sheet Player — 蒸汽朋克角色</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#1a1d24;color:#e0d8c8;font-family:system-ui,-apple-system,sans-serif;overflow:hidden;height:100vh}
+#app{display:flex;height:100vh}
+
+/* ========== 左侧控制面板 ========== */
+#panel{width:320px;background:#23272f;border-right:1px solid #3a3f48;overflow-y:auto;padding:16px;flex-shrink:0}
+#panel h1{font-size:16px;color:#c9a961;margin:0 0 12px;letter-spacing:2px}
+#panel h2{font-size:13px;color:#8b6914;margin:18px 0 8px;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid #3a3f48;padding-bottom:4px}
+#panel label{display:block;font-size:12px;color:#a8a090;margin-bottom:6px}
+#panel input[type="number"],#panel input[type="file"],#panel select,#panel input[type="text"]{
+    width:100%;padding:6px 8px;background:#1a1d24;border:1px solid #3a3f48;border-radius:4px;
+    color:#e0d8c8;font-size:12px;font-family:monospace;margin-bottom:8px
+}
+#panel input[type="file"]{padding:4px}
+#panel input[type="range"]{width:100%;margin-bottom:4px}
+#panel .row{display:flex;gap:8px}
+#panel .row>div{flex:1}
+#panel button{
+    width:100%;padding:8px 12px;background:#8b6914;border:none;border-radius:4px;color:#1a1d24;
+    font-size:12px;font-weight:bold;cursor:pointer;letter-spacing:1px;margin-bottom:6px
+}
+#panel button:hover{background:#c9a961}
+#panel button.ghost{background:#3a3f48;color:#e0d8c8}
+#panel button.ghost:hover{background:#4a4f58}
+
+/* 预设按钮 */
+.presets{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.presets button{font-size:11px;padding:6px 8px;margin:0}
+.presets button.active{background:#c9a961;outline:2px solid #ffdd66}
+
+/* ========== 右侧画布区 ========== */
+#stage{flex:1;background:#0d0f14;display:flex;flex-direction:column}
+#canvasWrap{flex:1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+canvas{max-width:100%;max-height:100%;image-rendering:auto;box-shadow:0 0 40px rgba(0,0,0,.5);background:#2a2a30}
+
+/* 底部控制栏 */
+#controls{background:#23272f;border-top:1px solid #3a3f48;padding:10px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+#controls label{font-size:12px;color:#a8a090}
+#controls input[type="range"]{width:150px;vertical-align:middle}
+#info{font-size:11px;color:#6a5a3a;margin-left:auto;font-family:monospace}
+.play-btn{padding:6px 14px;background:#c9a961;border:none;border-radius:4px;color:#1a1d24;font-weight:bold;cursor:pointer}
+.play-btn:hover{background:#ffdd66}
+.frame-label{font-size:12px;color:#c9a961;font-family:monospace;min-width:50px;text-align:center}
+
+/* 帧网格覆盖层 */
+#gridOverlay{position:absolute;pointer-events:none;border:1px solid rgba(201,169,97,.4)}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- ============ 控制面板 ============ -->
+<div id="panel">
+    <h1>SPLASH SPRITE VIEWER</h1>
+
+    <h2>1. 加载图片</h2>
+    <label>本地文件</label>
+    <input type="file" id="fileInput" accept="image/*">
+    <label>或输入路径 / URL</label>
+    <input type="text" id="urlInput" placeholder="player_walk8.jpg">
+    <button onclick="loadUrl()">加载路径</button>
+
+    <h2>2. 预设模板（一键适配）</h2>
+    <div class="presets">
+        <button data-preset="walk8">8方向行走</button>
+        <button data-preset="attack8">8方向攻击</button>
+        <button data-preset="idle">原地站立</button>
+        <button data-preset="build">原地建造</button>
+        <button data-preset="craft">原地制作</button>
+        <button data-preset="custom">自定义</button>
+    </div>
+
+    <h2>3. 帧配置</h2>
+    <div class="row">
+        <div><label>偏移 X</label><input type="number" id="offX" value="40"></div>
+        <div><label>偏移 Y</label><input type="number" id="offY" value="0"></div>
+    </div>
+    <div class="row">
+        <div><label>帧宽度</label><input type="number" id="frameW" value="280"></div>
+        <div><label>帧高度</label><input type="number" id="frameH" value="350"></div>
+    </div>
+    <div class="row">
+        <div><label>列数</label><input type="number" id="cols" value="15"></div>
+        <div><label>行数</label><input type="number" id="rows" value="8"></div>
+    </div>
+    <button onclick="applyConfig()">应用配置</button>
+
+    <h2>4. 播放控制</h2>
+    <div class="row">
+        <div><label>FPS</label><input type="number" id="fps" value="10" min="1" max="60"></div>
+        <div><label>方向行 (0-{rows-1})</label><input type="number" id="rowSel" value="0"></div>
+    </div>
+    <label>起始帧 <input type="number" id="startFrame" value="0" min="0"></label>
+    <label>结束帧 <input type="number" id="endFrame" value="14" min="0"></label>
+    <label><input type="checkbox" id="loop" checked> 循环播放</label>
+    <label>显示模式</label>
+    <select id="mode">
+        <option value="single">单帧（当前选中）</option>
+        <option value="anim">动画播放（单行）</option>
+        <option value="grid">整张网格预览</option>
+        <option value="rows">8方向对比展示</option>
+    </select>
+    <button onclick="togglePlay()" id="playBtn">▶ 播放</button>
+    <button class="ghost" onclick="prevFrame()">◀ 上一帧</button>
+    <button class="ghost" onclick="nextFrame()">下一帧 ▶</button>
+
+    <h2>5. 显示选项</h2>
+    <label><input type="checkbox" id="showGrid" checked> 显示网格线</label>
+    <label><input type="checkbox" id="scaleTo" checked> 自动缩放适配画布</label>
+</div>
+
+<!-- ============ 画布区 ============ -->
+<div id="stage">
+    <div id="canvasWrap">
+        <canvas id="cv" width="560" height="700"></canvas>
+    </div>
+    <div id="controls">
+        <button class="play-btn" id="playBtn2" onclick="togglePlay()">▶ 播放</button>
+        <span class="frame-label" id="frameLabel">帧 0 / 14</span>
+        <label>FPS
+            <input type="range" id="fpsRange" min="1" max="30" value="10" oninput="document.getElementById('fps').value=this.value">
+        </label>
+        <span id="info">未加载图片</span>
+    </div>
+</div>
+
+</div>
+
+<script>
+// ========= 全局状态 =========
+const img = new Image();
+let imgLoaded = false;
+let cfg = { offX:40, offY:0, fw:280, fh:350, cols:15, rows:8, row:0, start:0, end:14, loop:true, fps:10 };
+let currentFrame = 0;
+let playing = false;
+let lastTick = 0;
+
+// ========= 预设 =========
+const PRESETS = {
+    walk8:   { offX:40,  offY:0, fw:280, fh:350, cols:15, rows:8,  row:0, start:0,  end:14 },
+    attack8: { offX:40,  offY:0, fw:280, fh:350, cols:15, rows:8,  row:0, start:0,  end:14 },
+    idle:    { offX:0,   offY:0, fw:300, fh:550, cols:15, rows:1,  row:0, start:0,  end:14 },
+    build:   { offX:0,   offY:0, fw:300, fh:550, cols:15, rows:1,  row:0, start:0,  end:14 },
+    craft:   { offX:0,   offY:0, fw:300, fh:550, cols:15, rows:1,  row:0, start:0,  end:14 },
+    custom:  { offX:40,  offY:0, fw:280, fh:350, cols:15, rows:8,  row:0, start:0,  end:14 }
+};
+
+// 方向名称（从上到下）
+const DIRS = ['DOWN','DOWN-LEFT','LEFT','UP-LEFT','UP','UP-RIGHT','RIGHT','DOWN-RIGHT'];
+
+// ========= 图片加载 =========
+const fileInput = document.getElementById('fileInput');
+fileInput.addEventListener('change', e => {
+    const f = e.target.files[0];
+    if(!f) return;
+    const url = URL.createObjectURL(f);
+    loadImage(url);
+});
+
+function loadUrl(){
+    const v = document.getElementById('urlInput').value.trim();
+    if(!v) return;
+    loadImage(v);
+}
+
+function loadImage(src){
+    img.onload = () => {
+        imgLoaded = true;
+        document.getElementById('info').textContent = `图片: ${img.naturalWidth}×${img.naturalHeight}`;
+        // 自动推断最佳帧尺寸
+        autoDetectFrame();
+        render();
+    };
+    img.onerror = () => {
+        document.getElementById('info').textContent = '加载失败';
+    };
+    img.src = src;
+}
+
+// 自动检测帧尺寸（尝试匹配最接近的预设）
+function autoDetectFrame(){
+    const W = img.naturalWidth, H = img.naturalHeight;
+    if(H >= W * 0.5) {
+        // 8方向 sheet (宽高比约 1.5:1)
+        // 扣除左侧标签区约 30-50px
+        const guessOffX = 40;
+        const usableW = W - guessOffX;
+        const fw = Math.floor(usableW / 15);
+        const fh = Math.floor(H / 8);
+        updateFields({ offX:guessOffX, offY:0, fw, fh, cols:15, rows:8 });
+    } else {
+        // 单行 sheet (宽高比约 5:1)
+        const fw = Math.floor(W / 15);
+        const fh = Math.floor(H);
+        updateFields({ offX:0, offY:0, fw, fh, cols:15, rows:1 });
+    }
+}
+
+// ========= 预设应用 =========
+document.querySelectorAll('.presets button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+        document.querySelectorAll('.presets button').forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        applyPreset(btn.dataset.preset);
+    });
+});
+function applyPreset(key){
+    const p = PRESETS[key] || PRESETS.custom;
+    updateFields(p);
+    if(imgLoaded){
+        // 重新计算：如果图片尺寸已知，按比例算 fw/fh
+        if(p.rows > 1){
+            const usableW = img.naturalWidth - p.offX;
+            p.fw = Math.floor(usableW / p.cols);
+            p.fh = Math.floor(img.naturalHeight / p.rows);
+        } else {
+            p.fw = Math.floor(img.naturalWidth / p.cols);
+            p.fh = Math.floor(img.naturalHeight);
+        }
+        updateFields(p);
+    }
+    render();
+}
+
+function updateFields(obj){
+    ['offX','offY','fw','fh','cols','rows','row','start','end'].forEach(k=>{
+        if(k in obj){
+            document.getElementById(k === 'fw' ? 'frameW' : k === 'fh' ? 'frameH' :
+                                   k === 'row' ? 'rowSel' : k).value = obj[k];
+        }
+    });
+}
+
+function readFields(){
+    cfg.offX  = +document.getElementById('offX').value || 0;
+    cfg.offY  = +document.getElementById('offY').value || 0;
+    cfg.fw    = +document.getElementById('frameW').value || 100;
+    cfg.fh    = +document.getElementById('frameH').value || 100;
+    cfg.cols  = +document.getElementById('cols').value || 1;
+    cfg.rows  = +document.getElementById('rows').value || 1;
+    cfg.row   = Math.max(0, Math.min(cfg.rows-1, +document.getElementById('rowSel').value || 0));
+    cfg.start = +document.getElementById('startFrame').value || 0;
+    cfg.end   = Math.max(cfg.start, +document.getElementById('endFrame').value || cfg.cols-1);
+    cfg.loop  = document.getElementById('loop').checked;
+    cfg.fps   = +document.getElementById('fps').value || 10;
+    document.getElementById('rowSel').value = cfg.row;
+    document.getElementById('startFrame').value = cfg.start;
+    document.getElementById('endFrame').value = cfg.end;
+}
+
+function applyConfig(){
+    readFields();
+    render();
+}
+
+// ========= 渲染核心 =========
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+
+function frameAt(col, row){
+    return imgLoaded ? {
+        x: cfg.offX + col * cfg.fw,
+        y: cfg.offY + row * cfg.fh,
+        w: cfg.fw,
+        h: cfg.fh
+    } : null;
+}
+
+function drawFrameAt(dstW, dstH, col, row){
+    const f = frameAt(col, row);
+    if(!f) return;
+    ctx.drawImage(img, f.x, f.y, f.w, f.h, 0, 0, dstW, dstH);
+}
+
+function fitCanvas(w, h){
+    cv.width = w; cv.height = h;
+}
+
+function computeFittedSize(maxW, maxH){
+    if(!imgLoaded) return [cfg.fw, cfg.fh];
+    const wrap = document.getElementById('canvasWrap');
+    const W = wrap.clientWidth - 40;
+    const H = wrap.clientHeight - 40;
+    const srcW = cfg.fw, srcH = cfg.fh;
+    const scale = Math.min(W/srcW, H/srcH, 2); // 上限2倍
+    return [Math.floor(srcW*scale), Math.floor(srcH*scale)];
+}
+
+function render(){
+    if(!imgLoaded){
+        ctx.fillStyle = '#1a1d24';
+        ctx.fillRect(0,0,cv.width,cv.height);
+        ctx.fillStyle = '#6a5a3a';
+        ctx.font = '16px monospace';
+        ctx.textAlign='center';
+        ctx.fillText('请加载精灵图', cv.width/2, cv.height/2);
+        return;
+    }
+    readFields();
+    const mode = document.getElementById('mode').value;
+
+    if(mode === 'single' || mode === 'anim'){
+        const [w,h] = computeFittedSize();
+        fitCanvas(w,h);
+        const col = mode === 'anim' ? currentFrame :
+                    Math.min(cfg.cols-1, Math.max(0, currentFrame));
+        drawFrameAt(w, h, col, cfg.row);
+    } else if(mode === 'grid'){
+        // 整张网格预览
+        const W = cfg.fw * cfg.cols;
+        const H = cfg.fh * cfg.rows;
+        const wrap = document.getElementById('canvasWrap');
+        const maxW = wrap.clientWidth - 40;
+        const maxH = wrap.clientHeight - 40;
+        const scale = Math.min(maxW/W, maxH/H);
+        fitCanvas(Math.floor(W*scale), Math.floor(H*scale));
+        ctx.drawImage(img, cfg.offX, cfg.offY, W, H, 0, 0, cv.width, cv.height);
+    } else if(mode === 'rows'){
+        // 8方向对比展示：同一列帧，所有方向行
+        const COL = currentFrame;
+        const nrows = Math.min(cfg.rows, 8);
+        const W = cfg.fw;
+        const H = cfg.fh;
+        const wrap = document.getElementById('canvasWrap');
+        const maxW = wrap.clientWidth - 40;
+        const maxH = wrap.clientHeight - 40;
+        // 每行放一帧，横向排列
+        const totalH = H * nrows;
+        const totalW = W;
+        const scale = Math.min(maxW/W, maxH/totalH, 2);
+        fitCanvas(Math.floor(W*scale), Math.floor(totalH*scale));
+        for(let r=0;r<nrows;r++){
+            ctx.drawImage(img,
+                cfg.offX + COL*cfg.fw, cfg.offY + r*cfg.fh, cfg.fw, cfg.fh,
+                0, r*cfg.fh*scale, cfg.fw*scale, cfg.fh*scale);
+            // 方向标签
+            if(DIRS[r]){
+                ctx.fillStyle='rgba(0,0,0,.7)';
+                ctx.fillRect(4, r*cfg.fh*scale+4, 70, 20);
+                ctx.fillStyle='#c9a961';
+                ctx.font='11px monospace';
+                ctx.fillText(DIRS[r], 8, r*cfg.fh*scale+18);
+            }
+        }
+    }
+
+    // 画网格辅助线（仅 grid 模式）
+    if(mode === 'grid' && document.getElementById('showGrid').checked){
+        ctx.strokeStyle='rgba(201,169,97,.5)';
+        ctx.lineWidth=1;
+        const sx = cv.width / cfg.cols;
+        const sy = cv.height / cfg.rows;
+        for(let c=0;c<=cfg.cols;c++){
+            ctx.beginPath();
+            ctx.moveTo(c*sx, 0); ctx.lineTo(c*sx, cv.height); ctx.stroke();
+        }
+        for(let r=0;r<=cfg.rows;r++){
+            ctx.beginPath();
+            ctx.moveTo(0, r*sy); ctx.lineTo(cv.width, r*sy); ctx.stroke();
+        }
+    }
+
+    updateFrameLabel();
+}
+
+function updateFrameLabel(){
+    document.getElementById('frameLabel').textContent =
+        `帧 ${currentFrame} / ${cfg.end}`;
+}
+
+// ========= 播放循环 =========
+function togglePlay(){
+    playing = !playing;
+    document.getElementById('playBtn').textContent = playing ? '⏸ 暂停' : '▶ 播放';
+    document.getElementById('playBtn2').textContent = playing ? '⏸ 暂停' : '▶ 播放';
+    if(playing){
+        lastTick = performance.now();
+        requestAnimationFrame(loop);
+    }
+}
+
+function loop(now){
+    if(!playing) return;
+    const dt = now - lastTick;
+    const frameMs = 1000 / cfg.fps;
+    if(dt >= frameMs){
+        lastTick = now;
+        currentFrame++;
+        if(currentFrame > cfg.end){
+            if(cfg.loop) currentFrame = cfg.start;
+            else { currentFrame = cfg.end; playing = false;
+                document.getElementById('playBtn').textContent = '▶ 播放';
+                document.getElementById('playBtn2').textContent = '▶ 播放';
+            }
+        }
+        render();
+    }
+    requestAnimationFrame(loop);
+}
+
+function nextFrame(){
+    currentFrame = Math.min(cfg.end, currentFrame + 1);
+    render();
+}
+function prevFrame(){
+    currentFrame = Math.max(cfg.start, currentFrame - 1);
+    render();
+}
+
+// ========= 键盘快捷 =========
+document.addEventListener('keydown', e=>{
+    if(e.target.tagName === 'INPUT') return;
+    if(e.code === 'Space'){ e.preventDefault(); togglePlay(); }
+    else if(e.code === 'ArrowRight') nextFrame();
+    else if(e.code === 'ArrowLeft') prevFrame();
+    else if(e.code === 'ArrowUp'){
+        cfg.row = Math.max(0, cfg.row - 1);
+        document.getElementById('rowSel').value = cfg.row;
+        render();
+    }
+    else if(e.code === 'ArrowDown'){
+        cfg.row = Math.min(cfg.rows-1, cfg.row + 1);
+        document.getElementById('rowSel').value = cfg.row;
+        render();
+    }
+});
+
+// 实时响应控件变化
+['fps','rowSel','startFrame','endFrame','cols','rows'].forEach(id=>{
+    document.getElementById(id).addEventListener('input', ()=>{
+        readFields();
+        if(currentFrame > cfg.end) currentFrame = cfg.start;
+        render();
+    });
+});
+document.getElementById('mode').addEventListener('change', render);
+document.getElementById('showGrid').addEventListener('change', render);
+window.addEventListener('resize', render);
+
+// 默认尝试加载本地图片
+window.addEventListener('load', ()=>{
+    // 尝试同目录下的 walk 精灵
+    document.getElementById('urlInput').value = 'player_walk8.jpg';
+});
+</script>
+</body>
+</html>
