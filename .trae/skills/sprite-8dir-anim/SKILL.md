@@ -27,6 +27,8 @@ description: "8-direction high-quality character frame animation generation spec
 
 - 8 方向规格完全一致：帧数、帧率、画布、轴心、脚底基准线逐方向对齐。
 - 不对称元素独立体现：武器手、披风、单侧护甲/装饰、发型分缝在 8 方向下各自朝向正确，**不依赖翻转**。
+- **一动画一精灵图**：一个动作一个方向的所有帧合并为一张精灵表（`1×N` 横向切片），禁止逐帧独立生成后拼接（拼接会丢失一致性）。大模型应一次性输出一张精灵表。
+- **逐帧参考链**：同一动画内，每生成第 N 帧时，**必须同时传入第 N-1 帧作为参考图**，保证姿态连续。跨动作共享**统一的角色参考图**，跨方向各自独立重绘。
 
 ---
 
@@ -76,37 +78,101 @@ description: "8-direction high-quality character frame animation generation spec
 
 ---
 
-## 2. 生成流程
+## 2. 生成流程（大模型生图版本）
 
-### Step 1：规格校验（进入生成前）
+> **核心策略**：大模型生图极易出现角色漂移、衔接断裂，本节规定参考图链 + prompt 三段拆分 + 一动画一精灵图三条硬性生成策略。外包/手绘可参考 Step 2-4 的动作分解逻辑，但**一动画一精灵图**和**参考图链**对大模型生图是强制的。
+
+### Step 0：角色参考图预生成（所有动画共享）
+在生成任何动画之前，必须先产出**一张角色正视图参考图（ref.png）**，作为后续所有动作、所有方向、所有批次的统一参考基底。
+
+**这张 ref.png 必须包含**：
+- 角色正视图（S 方向，朝镜头），标准站立 pose，武器收在身侧
+- 清晰展示全部不对称特征：发型分缝侧、武器手、披风/单侧装饰位置
+- 白底或透明底，全身完整出画，脚底基准线水平
+- 配色方案最终确定（后续不可变）
+
+**使用规则**：
+- ref.png 写入 `character_{id}/source/ref.png`
+- manifest.json 记录 `refHash`，后续所有动作生成必须显式带上此 ref 图
+- 角色 ref 图**一旦确定不可修改**，若需改必须重新走完整生成流程（动作一致性门禁会全部重新校验）
+
+### Step 1：规格校验 + Prompt 模板锁定
+
+#### 1.1 规格校验（进入生成前）
 - 画布容纳所有动作所有方向最大包围盒
 - 轴心、脚底基准线全帧全方向一致
 - 8 方向命名完整统一
 - 动作清单覆盖状态机所需状态
 - **不通过打回，不进入生成**
 
-### Step 2：基准方向定稿
-- 先出基准方向（E 或 S）每个动作 2–3 张关键姿态帧（起始、极值、结束）
-- 确认姿态、比例、轴心、脚底基准线
-- **定稿后锁定角色身高、比例、轴心，其余 7 方向不得改变**
+#### 1.2 Prompt 三段拆分（强制）
+所有大模型生图 prompt 必须拆为以下三段，**CharacterLock 段在所有批次中完全复用，一字不改**：
+
+```
+[CharacterLock —— 角色锁，全文复用]
+{id} steam-punk engineer: adult male, short dark brown hair with left-side part, round wire-rimmed glasses, navy blue overalls with brass rivets, brown leather tool belt with tool pouch on LEFT hip, RIGHT hand holds metallic open-end wrench, copper pipes on right shoulder, brown leather work boots. Hand-painted digital art style, sRGB, soft anti-aliasing, transparent background, full body, feet aligned to bottom baseline, centered composition.
+
+[ViewLock —— 视角锁，仅改变方向描述]
+Facing East (right, 90°, pure side profile).
+// Facing South (facing camera, front view).
+// Facing Southeast (45° isometric, half-front).
+// ... 8 方向各自一条
+
+[ActionDesc —— 动作描述]
+Walking animation, frame 3 of 8: left foot at maximum forward position, right foot pushing off ground.
+// Idle breathing, frame 6 of 8: max exhale, chest fully lowered.
+// Attack light, frame 3 of 6: wrench at peak swing, body leaning forward.
+// ... 逐帧描述
+```
+
+### Step 2：按"一动画一精灵图"生成
+
+**每个动作每个方向生成一张精灵表**（如 `walk_E` → 1×8 横向切片精灵图），而不是逐帧独立生成再拼接。
+
+**Prompt 模板**（以 walk_E 8 帧为例）：
+```
+[CharacterLock —— 复用]
+[ViewLock —— Facing East, 90° pure side profile]
+
+Animation sprite sheet, single horizontal strip, 8 frames left-to-right, same character, same canvas size, same foot baseline on every frame:
+Frame 1: neutral standing
+Frame 2: left foot stepping forward slightly
+Frame 3: left foot at maximum forward, right foot pushing off
+Frame 4: left foot passing right, right foot starting forward
+Frame 5: right foot stepping forward
+Frame 6: right foot at maximum forward, left foot pushing off
+Frame 7: right foot passing left, left foot starting forward
+Frame 8: right foot planting, left foot starting forward (NOT identical to frame 1)
+
+All 8 frames same body proportions, same clothing details, same wrench position relative to body. No background, transparent.
+```
+
+**逐帧参考链（增强一致性）**：如果模型不支持一次出整张精灵表，退而求其次逐帧生成时，**每生成第 N 帧必须把第 N-1 帧作为参考图**传入：
+- frame1：CharacterLock + ViewLock
+- frame2：CharacterLock + ViewLock + **参考图=frame1** + ActionDesc frame2
+- frame3：CharacterLock + ViewLock + **参考图=frame2** + ActionDesc frame3
+- ...
+- frameN：CharacterLock + ViewLock + **参考图=frame(N-1)** + ActionDesc frameN
 
 ### Step 3：8 方向独立展开
-- 逐方向独立绘制，斜向方向单独处理透视压缩
+- 逐方向独立重绘，**禁止镜像翻转、禁止旋转裁剪**
+- 每个方向单独用 Step 2 的方式生成自己的精灵表
+- 跨方向共享同一套 CharacterLock（保证角色一致性），ViewLock 改成对应方向
 - 每完成一个方向做方向一致性检查：身高、脚底、武器手、披风朝向、比例
-- **禁止任何旋转/镜像/复用手段**
 
-### Step 4：帧序列补全
-- 按动作清单补全中间帧
-- 循环动作：首尾姿态连续但不重复，播放 N 帧无停顿帧
-- 单次动作：明确起止帧
+### Step 4：动作衔接与循环校验
+- 循环动作：首尾姿态连续但不重复（首尾帧差异在"阈值区间"内，不应完全相同也不应完全不相关）
+- 单次动作：明确起止帧，起止帧与循环动作的 idel 衔接姿态一致
+- 所有方向所有动作的结束姿态，与 idle 动作的起始姿态**自然衔接**（无跳变）
 
 ### Step 5：技术处理
 - 透明背景、Alpha 预乘确认、无黑边
 - 像素风关闭抗锯齿与 mipmap
+- 从精灵表自动切帧：用固定帧宽 `canvasW / cols` 和帧高 `canvasH / rows`（或行数=1）切分
 - 导出 PNG 序列 + 精灵表 + 帧数据 JSON（每帧矩形、轴心、时长、循环标记）
 
 ### Step 6：元数据
-- 生成 manifest.json：角色 ID、方向集合、每个动作每个方向的帧数/帧率/循环标记、画布尺寸、轴心坐标、脚底基准线、命名规则、图集划分
+- 生成 manifest.json：角色 ID、ref 图路径与 hash、方向集合、每个动作每个方向的帧数/帧率/循环标记、画布尺寸、轴心坐标、脚底基准线、命名规则、图集划分
 
 ---
 
@@ -145,6 +211,18 @@ description: "8-direction high-quality character frame animation generation spec
 | S1 | 抗锯齿匹配 | 像素风关闭，手绘/厚涂开启 |
 | S2 | 颜色模式匹配 | sRGB |
 | S3 | 跨方向风格一致 | 角色比例、配色、描边粗细跨方向一致 |
+
+### 3.4 大模型生成专项门禁（AI 生图必过）
+
+| # | 检查项 | 通过标准 | 失败信号 |
+|---|--------|---------|---------|
+| A1 | 角色 ref 图存在 | `source/ref.png` 存在且 manifest 中 `refHash` 匹配 | 缺 ref 图；ref 图 hash 与 manifest 不一致 |
+| A2 | CharacterLock 一致 | 所有批次 prompt 的 CharacterLock 段完全相同（一字不差） | 不同批次 prompt 出现描述差异（如"wire-rimmed glasses" vs "round glasses"） |
+| A3 | 同一动画角色一致 | 同一动作同一方向的所有帧，SSIM ≥ 0.85 | 连续帧角色比例、配色、发型明显漂移 |
+| A4 | 跨动作角色一致 | 不同动作但同方向（如 walk_E vs idle_E），角色 ref 特征相似度 ≥ 0.9 | walk_E 的角色长得和 idle_E 不像了（脸、发型、身材漂移） |
+| A5 | 首尾帧连续 | 循环动作首尾帧 SSIM 在 [0.55, 0.95] 区间 | < 0.55 跳变；= 1.0 停顿（完全相同） |
+| A6 | 一动画一精灵图 | 每个动作每个方向产出一张精灵表，非逐帧拼接 | 目录下是 8 张独立帧图而非一张精灵表 |
+| A7 | 脚底基准线稳定 | 同一动画所有帧脚底 Y 坐标差异 ≤ 2px | 脚在画面里上下飘 |
 
 ---
 
@@ -219,6 +297,15 @@ character_{id}/
   "characterId": "hero",
   "style": "hand_painted_cartoon",
   "viewingAngle": "isometric_45",
+  "source": {
+    "refPath": "source/ref.png",
+    "refHash": "sha256:abcd...",              // 角色 ref 图 hash，所有批次必须匹配
+    "promptLock": {                            // 锁定的 prompt 三段（所有批次复用）
+      "characterLock": "steam-punk engineer: ...",
+      "viewLocks": { "S": "Facing South ...", "E": "Facing East ...", /* 8 方向 */ },
+      "lastUpdated": "2026-10-28T12:00:00Z"
+    }
+  },
   "perspective": {
     "baseDirection": "E",
     "compression": { "S": 1.0, "SE": 0.9, "E": 0.85, "NE": 0.9, "N": 1.0, "NW": 0.9, "W": 0.85, "SW": 0.9 }
@@ -243,6 +330,7 @@ character_{id}/
 }
 ```
 - manifest 必须与实际文件**逐一对应**
+- `source.refHash` 和 `source.promptLock` 一旦锁定不可修改，若变则视为全新角色
 
 ### 5.6 方向一致性检查表产物（CSV 示例）
 
@@ -305,6 +393,9 @@ character_{id}/
 | R7 | 缺方向或方向文件复用 | 某方向缺失或引用其他方向文件 | 目录列表缺 dir；帧内容是另一方向的缩放 | 补齐 |
 | R8 | 只交精灵表不交帧数据 | 引擎无法自动切分 | 缺 `{id}{action}{dir}_sheet.json` | 补齐帧数据 |
 | R9 | 不交方向一致性表 | 方向间跳变无追溯 | 缺 `qa/direction_consistency_checklist.csv` | 补齐检查表 |
+| R10 | 逐帧独立生成导致角色漂移 | 每帧独立 prompt，无参考图链，模型对同一角色理解逐渐偏移 | 连续帧脸、发型、身材漂移 SSIM < 0.85 | 退回 Step 0 重走角色 ref 图流程 |
+| R11 | 一动画拆成多张独立帧再拼接 | 逐帧生成 PNG 而非一次性精灵表 | 目录是 frame_01.png...frame_08.png 而不是 sheet.png | 退回 Step 2 重新生成精灵表 |
+| R12 | 跨批次 CharacterLock prompt 不一致 | 不同动作用了不同版本的角色描述词 | prompt 文本 diff 出现措辞差异 | 锁定 CharacterLock 段，重新生成受影响批次 |
 
 ---
 
