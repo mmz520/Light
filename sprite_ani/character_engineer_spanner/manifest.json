@@ -1,0 +1,72 @@
+{
+  "characterId": "engineer_spanner",
+  "style": "don_t_starve_hand_drawn_steam_punk",
+  "viewingAngle": "side_profile",
+  "source": {
+    "refPath": "source/ref.png",
+    "refHash": "sha256:691cbb3071c485debe31c3b4a1dff4e691ffb0ca73be00b4bfd6685c7982c482",
+    "promptLock": {
+      "characterLock": "steam-punk engineer in Don't Starve style: adult male, tall lanky body with short stubby limbs, messy dark brown spiky hair, brass wire-rimmed goggles pushed up on forehead, brown leather aviator jacket with brass shoulder pads and rivets, dark navy blue overalls with bronze buttons, RIGHT hand grips large silver steel open-end wrench held at side, LEFT hand holds brass watering can, tool belt with small tools, copper pipes and brass gears attached to shoulders, scuffed brown leather work boots. Thick black ink outline, hand-drawn wobbly sketchy line art, painted cel-shading, muted earthy browns and rust oranges and steam grays.",
+      "viewLocks": {
+        "S": "Facing South (facing camera, front view, 0 degree)",
+        "SE": "Facing Southeast (45 degree isometric, half front)",
+        "E": "Facing East (right side, 90 degree, pure side profile)",
+        "NE": "Facing Northeast (135 degree isometric, half back)",
+        "N": "Facing North (back view, 180 degree)",
+        "NW": "Facing Northwest (225 degree isometric, half back)",
+        "W": "Facing West (left side, 270 degree, pure side profile mirror of E)",
+        "SW": "Facing Southwest (315 degree isometric, half front)"
+      },
+      "lastUpdated": "2026-10-28T15:15:00Z"
+    }
+  },
+  "perspective": {
+    "baseDirection": "E",
+    "compression": {
+      "S": 1.0,
+      "SE": 0.9,
+      "E": 0.85,
+      "NE": 0.9,
+      "N": 1.0,
+      "NW": 0.9,
+      "W": 0.85,
+      "SW": 0.9
+    }
+  },
+  "directions": [
+    "E"
+  ],
+  "canvas": {
+    "w": 1024,
+    "h": 1024
+  },
+  "anchor": {
+    "x": 512,
+    "y": 950
+  },
+  "footBaselineY": 950,
+  "colorMode": "sRGB",
+  "antialias": true,
+  "loopActions": {
+    "idle": {
+      "frames": 8,
+      "fps": 10,
+      "loop": true
+    },
+    "walk": {
+      "frames": 8,
+      "fps": 12,
+      "loop": true
+    }
+  },
+  "singleActions": {
+    "attack_light": {
+      "frames": 6,
+      "fps": 24,
+      "loop": false
+    }
+  },
+  "namingRule": "{characterId}_{action}_{dir}_sheet.png",
+  "atlasLimit": 4096,
+  "files": []
+}
