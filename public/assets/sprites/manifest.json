@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-29T02:41:23+00:00",
+  "cell": {
+    "w": 384,
+    "h": 384,
+    "pivotX": 192,
+    "pivotY": 376
+  },
+  "characters": {
+    "engineer_spanner": {
+      "displayHeight": 2.0,
+      "actions": {
+        "idle": {
+          "frames": 8,
+          "fps": 10,
+          "loop": true
+        },
+        "walk": {
+          "frames": 8,
+          "fps": 12,
+          "loop": true
+        }
+      }
+    }
+  }
+}
