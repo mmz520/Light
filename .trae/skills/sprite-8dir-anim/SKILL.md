@@ -37,13 +37,60 @@ description: "Unified generation spec for block-assembled characters, shared equ
 └─────┴─────┴─────┴─────┘
 ```
 
-### 0.2 关键对齐规则（强制）
+### 0.2 关键对齐规则（强制 —— 堆叠时 0 位移直接拼出角色）
 
-1. **同一方向大图内，所有部件的脚底对齐线（foot baseline）必须落在完全相同的像素 Y 坐标**。这样脚本裁剪后，所有部件图叠到同一坐标系直接拼出角色，**不需要引擎做任何位移**。
-2. **所有大图的网格尺寸相同**（例如全部 512×512），脚本一套参数切到底。
-3. **网格都是正方形**（`gridW = gridH`），方便模型和脚本统一处理。
+**目标**：脚本裁剪完所有小图后，把它们放到同一个画布上、**引擎不做任何 per-part 位移**，直接按 Z 顺序叠就得到正确的角色形象。以下 4 条全部必须遵守：
 
-### 0.3 方向顺序（强制 S → E → N → W）
+1. **同一方向大图内，所有部件的脚底对齐线（foot baseline）必须落在大图完全相同的像素 Y 坐标**。这是最外层约束——整张图里所有部件的脚踩在同一水平线上。
+
+2. **网格内锚点 Y 坐标强制统一**。每个部件画在自己的 512×512 网格内时，**脚底距网格底部固定 100 像素**（即部件自身锚点 `localFootY = gridSize - 100 = 412`，从网格顶数下来是第 412 行，从网格底往上数是第 100 行）。脖子类部件（head / neck）则规定**脖子顶距网格顶部固定 100 像素**（`localNeckTopY = 100`）。**这个值（100）是全项目硬编码常量，脚本和引擎都按此读取**。
+
+3. **所有部件必须围绕自己的锚点居中**——锚点在网格内 x 方向居中（x=256），y 方向落在上面规定的 412 / 100。四周留出的透明边距由模型按部件实际形态自动调整，**模型不能为了"好看"把脚往上抬、不能让脖子飘得太高**。
+
+4. **部件自身锚点定义**（每个部件都明确自己哪个位置算"脚底"）：
+   | slot | 锚点 | 在网格内的固定位置 |
+   |------|------|------------------|
+   | calf_L / calf_R | 靴底中心 | y = 412 距底 100 |
+   | thigh_L / thigh_R | （延伸）大腿下沿 → 自然接 calf 的膝球，锚点仍归 calf | — |
+   | forearm_L / forearm_R | 手掌中心 | 部件底部，距底 100 |
+   | upper_arm_L / upper_arm_R | 肩球中心 | 部件底部，距底 100 |
+   | torso_U | 底腰带边缘（接 torso_L） | y = 412 距底 100 |
+   | torso_L | 底腰带边缘（接 thigh） | y = 412 距底 100 |
+   | neck | 脖子下端（接 torso_U 顶） | y = 412 距底 100 |
+   | head | 脖子顶（接 neck 顶） | y = 100 距顶 100（head 用 neck 顶作锚点，因为 head 底部不是脚） |
+   | weapon / gloves | 握柄中心 | y = 412 距底 100 |
+
+**脚本裁剪后的引擎侧行为**（伪代码）：
+```ts
+// 引擎拿所有部件，全部对齐到 world Y = footBaselineY
+for (const part of allParts) {
+  // part.localFootY 从裁剪后的小图像素直接读出（恒定 412）
+  // 引擎把 part.localFootY 对齐到 world.footBaselineY
+  // 不需要每个 part 自己的 offset
+  part.y = world.footBaselineY - part.localFootY
+  // head 用 neck 顶：part.y = world.footBaselineY + neckLengthPixels - part.localNeckTopY
+}
+```
+
+**脚本自检**：裁剪完后，PIL 把所有部件按上面规则叠到一起，计算拼接结果与 character_keyframe 的 SSIM，≥ 0.90 才算通过。SSIM < 0.90 说明有部件锚点没对齐 → 整方向大图打回重画。
+
+### 0.3 Prompt 里怎么写这条（强制照抄）
+
+```
+[ALIGNMENT RULES — VIOLATE OR RE-DRAW]
+- Every part lives in its own 512x512 grid cell.
+- EACH PART'S ANCHOR POINT (defined below) MUST land on EXACTLY pixel coordinate (256, 412) INSIDE its own cell.
+  (Grid top = 0, bottom = 512. 412 means 100px from grid bottom.)
+- Head/neck parts whose anchor is a neck-top: anchor MUST land on (256, 100) — 100px from grid TOP.
+- DO NOT move the part up or down inside its cell. DO NOT center the part around some arbitrary point.
+  The anchor point IS the only allowed vertical reference.
+- After you finish drawing, if you cut out each 512x512 cell and stacked all cutouts on top of each other
+  with no offset, the 12 cutouts should reassemble into a complete, naturally standing person
+  — foot on floor, head on neck, no gaps, no overlap artifacts at joints.
+```
+**把这段复制进每一张大图的 Prompt 末尾**，一个字都不要改。这是大模型唯一能遵守对齐规则的手段。
+
+### 0.4 方向顺序（强制 S → E → N → W）
 
 所有多方向产出（角色、装备、怪物）**必须按 下→右→上→左 的顺序依次生成**：
 
@@ -56,7 +103,7 @@ description: "Unified generation spec for block-assembled characters, shared equ
 
 这样做的原因：模型逐方向参考能保证同方向内角色比例、配色、不对称元素（武器手、发型分缝）自然过渡，不会每个方向都像换了个角色。
 
-### 0.4 大图规格（全项目统一）
+### 0.5 大图规格（全项目统一）
 
 | 参数 | 值 | 说明 |
 |------|-----|------|
@@ -169,6 +216,17 @@ One BIG image. Grid cells 512x512 square. Layout:
 - Torso_U and torso_L must look reasonable from all 4 directions — use isometric projection, not pure front/side.
 - Transparent background ONLY for the cutout parts.
 - NO numbered labels, NO text, NO watermarks, NO environment.
+
+[ALIGNMENT RULES — VIOLATE OR RE-DRAW]
+- Every part lives in its own 512x512 grid cell.
+- EACH PART'S ANCHOR POINT MUST land on EXACTLY pixel coordinate (256, 412) INSIDE its own cell.
+  (Grid top = 0, bottom = 512. 412 means 100px from grid bottom.)
+- For head/neck parts whose anchor is a neck-top: anchor MUST land on (256, 100) — 100px from grid TOP.
+- DO NOT move the part up or down inside its cell. DO NOT center the part around some arbitrary point.
+  The anchor point IS the only allowed vertical reference.
+- After you finish drawing, if you cut out each 512x512 cell and stacked all cutouts on top of each other
+  with Z-order but NO offset, the 12 cutouts should reassemble into a complete, naturally standing person
+  — foot on floor, head on neck, no gaps, no overlap artifacts at joints.
 ```
 
 ---
@@ -197,12 +255,45 @@ One BIG image. Grid cells 512x512 square. Layout:
 
 ### 2.3 装备挂载点
 
-- `hat`：挂在角色 `head` 图顶端中心
-- `cape / backpack`：挂在角色 `torso_U` 图背部中心
-- `clothes`：**替换**角色 `torso_U + torso_L` 的显示（角色 torso 变成透明，装备衣服画完整躯干）
-- `shoes`：**替换**角色 `calf_L + calf_R` 的靴子部分（小腿继续画，靴子换成装备）
-- `gloves`：**替换**角色 `forearm_L + forearm_R` 的手套部分
-- `weapon`：挂在角色 `forearm_R` 图的手掌中心
+**挂载逻辑**：装备的锚点必须与它挂载/替换的角色身体部件的锚点**像素坐标完全一致**（都在各自 512×512 网格内），这样装备叠上去也是 0 位移。
+
+| 装备 slot | 挂载/替换的身体部件 | 装备自己的锚点（在装备网格内） |
+|----------|-------------------|------------------------------|
+| `hat`      | 挂在 head 的 neck 顶 | 锚点在装备网格距顶 100（head 自己锚距顶 100） |
+| `cape`     | 挂在 torso_U 背部 | 锚点距底 100（同 torso_U） |
+| `backpack` | 挂在 torso_U 背部 | 锚点距底 100 |
+| `clothes`  | **替换** torso_U + torso_L | 锚点距底 100，覆盖这两个 body slot 的显示 |
+| `shoes`    | **替换** calf_L + calf_R 的靴子部分 | 锚点距底 100，覆盖 calf 的下半部 |
+| `gloves`   | **替换** forearm_L + forearm_R 的手套部分 | 锚点距底 100 |
+| `weapon`   | 挂在 forearm_R 的手掌中心 | 锚点距底 100 |
+
+### 2.4 装备 Prompt 模板示例（hat 4 方向大图）
+
+装备的 Prompt 结构和角色身体完全相同，ALIGNMENT RULES 也是§0.3 那段原文复用。唯一区别是布局（4 行 1 列）和 CharacterLock 内容。
+
+```
+[CharacterLock —— 装备专属，全文复用]
+Engineer brass helmet with small round goggles on front, black leather chin strap, 3 brass rivets on side. Don't Starve thick black outlines, flat cel shading.
+
+[ViewLock —— Facing South]
+...（4 方向各自一段）
+
+[Layout]
+One BIG image. 4 rows × 1 column of 512x512 cells.
+  Row 0: hat_S
+  Row 1: hat_E
+  Row 2: hat_N
+  Row 3: hat_W
+
+[CRITICAL]
+- Grid cells 512x512.
+- ONLY draw the hat — NO head underneath. Hat looks like it floats when cut out alone.
+- 4 directions, each hat must look correct facing its direction. S = 头盔正面向镜头，E = 头盔侧面朝右，N = 头盔背部，W = 侧面朝左。
+- Transparent background ONLY. NO labels.
+
+[ALIGNMENT RULES — 与 §0.3 角色身体那段完全相同，原文照抄]
+...
+```
 
 ---
 
@@ -281,6 +372,14 @@ All frames show THE SAME hound, same size, same pose variation.
 - All 6 frames share the SAME foot baseline Y coordinate.
 - Transparent background ONLY. NO numbered labels, NO text, NO watermarks, NO environment.
 - Keep the hound simple — no more than 5 distinct parts visible.
+
+[MONSTER ALIGNMENT RULES — VIOLATE OR RE-DRAW]
+- Every frame lives in its own 512x512 grid cell.
+- IN EVERY SINGLE FRAME, the hound's ground-contact point (feet / leg bottoms / whatever part touches the floor) MUST land on EXACTLY pixel coordinate (256, 412) inside its cell.
+  (Grid top = 0, bottom = 512. 412 means 100px from grid bottom.)
+- Feet can lift during walk/attack — but the "landing point" (where feet would normally touch ground) must stay at (256, 412).
+- After you finish, if you cut out each 512x512 frame and stacked all 6 cutouts on top of each other with no offset,
+  all 6 hounds should appear to stand on the SAME horizontal floor — no frame floats, no frame sinks.
 ```
 
 ### 3.7 怪物 Prompt 模板（monster_walk_S.png，参考 idle 第一帧）
@@ -292,7 +391,11 @@ All frames show THE SAME hound, same size, same pose variation.
 [CRITICAL —— 同上 + 以下新增]
 - THIS GENERATION USES monster_idle_S.png frame 1 as visual reference.
 - 8 frames walk animation, loopable. Front-left leg forward on frame 2, front-right leg forward on frame 6.
-- All 8 frames same foot baseline.
+
+[MONSTER ALIGNMENT RULES — SAME AS monster_idle_S]
+- Ground-contact point in every frame lands at (256, 412) in its cell.
+- Feet lift naturally during gait, but the reference ground point does not move up/down.
+- No frame floats, no frame sinks when all 8 frames are stacked at no offset.
 ```
 
 ---
