@@ -34,7 +34,7 @@ MARGIN = 8
 
 CHARACTERS: dict[str, dict] = {
     "engineer_spanner": {
-        "displayHeight": 2.0,
+        "displayHeight": 2.6,
         "actions": {
             "idle": {"frames": 8, "fps": 10, "loop": True},
             "walk": {"frames": 8, "fps": 12, "loop": True},
@@ -82,7 +82,7 @@ def remove_background(rgb: np.ndarray) -> np.ndarray:
     arr = rgb.astype(np.int16)
     mx = arr.max(axis=2)
     mn = arr.min(axis=2)
-    candidate = (mn > 195) & ((mx - mn) < 26)
+    candidate = (mn > 180) & ((mx - mn) < 22)
     pure_white = (mn > 246) & ((mx - mn) <= 10)
 
     labels, _ = ndimage.label(candidate)
