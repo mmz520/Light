@@ -287,15 +287,22 @@ ActorSprite.update(clip, frame, dir) → Texture.offset/repeat
 
 | 阶段 | 状态 | 备注 |
 |---|---|---|
-| P0 规格冻结 | 进行中 | 动作清单/尺寸/锚点已定，manifest 结构待落地 |
-| P1 脚手架 | 待开始 | — |
-| P2 引擎骨架 | 待开始 | — |
-| P3 角色渲染 | 待开始 | 依赖 idle 8 方向（已有） |
-| P4 移动与状态机 | 待开始 | 依赖 walk 8 方向（4/8 已有） |
+| P0 规格冻结 | ✅ 完成 | 动作清单/尺寸/锚点/manifest 结构已落地 |
+| P1 脚手架 | ✅ 完成 | Vite5 + React18 + TS strict，`npm run dev` 可跑 |
+| P2 引擎骨架 | ✅ 完成 | 固定步长循环 / EventBus / AssetLoader / CameraRig / RenderSystem / InputSystem |
+| P3 角色渲染 | ✅ 完成 | 工程师 idle 8 方向，帧→UV 只在 `ActorSprite` |
+| P4 移动与状态机 | ✅ 完成 | WASD+Shift 移动、idle↔walk 切换、8 方向朝向（无头 Chrome 实测 60fps） |
 | P5 敌人 | 待开始 | 依赖锈蚀猎犬资产 |
 | P6 场景组件 | 待开始 | — |
-| P7 UI 迁移 | 待开始 | — |
-| P8 资产生成 | 进行中 | idle 8/8、walk 4/8、attack 0/8、run/work/hit/death 0；猎犬 0 |
+| P7 UI 迁移 | 待开始 | 目前只有调试 HUD |
+| P8 资产生成 | 进行中 | 工程师 idle 8/8、walk 8/8 已完成；run/attack/hit/death/work 0；猎犬 0 |
+| P9 门禁与收尾 | 待开始 | — |
+
+### 已验证事实（无头 Chrome + Vite dev）
+- 页面 1280×800、稳定 60fps，控制台无 error/warning
+- 按 D → `动作 walk / 方向 E`；按 W → `动作 walk / 方向 N`；坐标持续变化
+- 角色透明背景干净（棋盘格已去除），脚底贴地、阴影正确
+- 已知待办：`attack` 动作尚未生成，空格暂时不会切换动画
 
 ### 资产生成约定（复用，勿改）
 - `image_size`：8 帧 `8192x1024`；6 帧 `6144x1024`；5 帧 `5120x1024`；3 帧 `3072x1024`（总像素须 ≥ 3,686,400）
