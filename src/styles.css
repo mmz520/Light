@@ -2,6 +2,13 @@
   --hud-bg: rgba(24, 22, 16, 0.78);
   --hud-border: #c9a04a;
   --hud-text: #e7dcc3;
+
+  /* 滚动条配色：与编辑器暗色面板（#1e1e22 / #2a2a30 / #333）保持一致 */
+  --scroll-size: 12px;
+  --scroll-track: rgba(0, 0, 0, 0.18);
+  --scroll-thumb: #43434c;
+  --scroll-thumb-hover: #5b5b67;
+  --scroll-thumb-active: #6cf;
 }
 
 * {
@@ -88,4 +95,58 @@ body,
   font-size: 14px;
   line-height: 1.6;
   white-space: pre-wrap;
+}
+
+/* ---------------- 滚动条：替换浏览器默认样式 ---------------- */
+
+/* Firefox 及新版规范 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+
+/* WebKit / Chromium / Edge / Safari */
+::-webkit-scrollbar {
+  width: var(--scroll-size);
+  height: var(--scroll-size);
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scroll-track);
+}
+
+::-webkit-scrollbar-thumb {
+  /* 透明边框 + padding-box 裁切：滑块看起来比轨道细，留出呼吸空间 */
+  background-color: var(--scroll-thumb);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  min-height: 36px;
+  min-width: 36px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scroll-thumb-hover);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--scroll-thumb-active);
+}
+
+/* 横竖滚动条交汇的方角，默认是刺眼的白色 */
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 上下/左右按钮在旧版 Chromium 会显示白色方块，隐藏掉 */
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* 下拉框展开列表跟着走暗色，避免 Windows 上白底黑字 */
+option {
+  background-color: #1e1e22;
+  color: #e4e4e8;
 }

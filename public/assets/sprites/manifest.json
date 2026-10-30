@@ -1,27 +1,248 @@
 {
-  "version": 1,
-  "generatedAt": "2026-10-30T01:31:18+00:00",
+  "version": 4,
+  "generatedAt": "2026-10-30T08:40:31+00:00",
+  "partGrid": 512,
+  "anchorFootY": 412,
   "cell": {
     "w": 384,
     "h": 384,
     "pivotX": 192,
     "pivotY": 376
   },
-  "characters": {
-    "engineer_spanner": {
-      "displayHeight": 2.6,
+  "directions": [
+    "S",
+    "E",
+    "N",
+    "W"
+  ],
+  "sharedBodies": {
+    "path": "role/common",
+    "parts": {
+      "arm": 75,
+      "torso_U": 70,
+      "torso_L": 60,
+      "leg": 90
+    },
+    "layoutS": {
+      "thigh_L": {
+        "cx": 232,
+        "bottom": 344,
+        "h": 90
+      },
+      "thigh_R": {
+        "cx": 280,
+        "bottom": 344,
+        "h": 90
+      },
+      "calf_L": {
+        "cx": 232,
+        "bottom": 412,
+        "h": 76
+      },
+      "calf_R": {
+        "cx": 280,
+        "bottom": 412,
+        "h": 76
+      },
+      "torso_L": {
+        "cx": 256,
+        "bottom": 262,
+        "h": 60
+      },
+      "torso_U": {
+        "cx": 256,
+        "bottom": 212,
+        "h": 70
+      },
+      "upper_arm_L": {
+        "cx": 198,
+        "top": 160,
+        "h": 75
+      },
+      "upper_arm_R": {
+        "cx": 314,
+        "top": 160,
+        "h": 75
+      },
+      "forearm_L": {
+        "cx": 198,
+        "top": 225,
+        "h": 64
+      },
+      "forearm_R": {
+        "cx": 314,
+        "top": 225,
+        "h": 64
+      },
+      "head": {
+        "cx": 256,
+        "bottom": 136,
+        "h": 110
+      },
+      "hat": {
+        "cx": 256,
+        "bottom": 60,
+        "h": 50
+      },
+      "back": {
+        "cx": 256,
+        "bottom": 272,
+        "h": 100
+      },
+      "back_S": {
+        "cx": 256,
+        "top": 156,
+        "h": 96
+      },
+      "foot_L": {
+        "cx": 232,
+        "bottom": 412,
+        "h": 50
+      },
+      "foot_R": {
+        "cx": 280,
+        "bottom": 412,
+        "h": 50
+      },
+      "hand_L": {
+        "cx": 198,
+        "bottom": 293,
+        "h": 44
+      },
+      "hand_R": {
+        "cx": 314,
+        "bottom": 293,
+        "h": 44
+      },
+      "weapon": {
+        "cx": 322,
+        "bottom": 291,
+        "h": 95
+      }
+    },
+    "zOrderS": [
+      "thigh_L",
+      "thigh_R",
+      "calf_L",
+      "calf_R",
+      "torso_L",
+      "torso_U",
+      "back",
+      "upper_arm_L",
+      "upper_arm_R",
+      "forearm_L",
+      "forearm_R",
+      "foot_L",
+      "foot_R",
+      "hand_L",
+      "hand_R",
+      "head",
+      "hat",
+      "weapon"
+    ]
+  },
+  "characters": [
+    {
+      "id": "engineer_spanner",
+      "headPath": "role/engineer_spanner",
+      "bodyRef": "sharedBodies",
+      "equipment": {
+        "hat": "engineer_cap",
+        "back": "gearpack",
+        "hand": "gloves",
+        "foot": "boots",
+        "weapon": "wrench"
+      }
+    }
+  ],
+  "equipment": [
+    {
+      "id": "engineer_cap",
+      "slot": "hat",
+      "sharedImage": false,
+      "pathByDirection": {
+        "S": "equipment/hat/engineer_cap/S.png",
+        "E": "equipment/hat/engineer_cap/E.png",
+        "N": "equipment/hat/engineer_cap/N.png",
+        "W": "equipment/hat/engineer_cap/W.png"
+      }
+    },
+    {
+      "id": "gearpack",
+      "slot": "back",
+      "sharedImage": false,
+      "strapOnlyDirs": [
+        "S"
+      ],
+      "pathByDirection": {
+        "S": "equipment/back/gearpack/S.png",
+        "E": "equipment/back/gearpack/E.png",
+        "N": "equipment/back/gearpack/N.png",
+        "W": "equipment/back/gearpack/W.png"
+      }
+    },
+    {
+      "id": "boots",
+      "slot": "foot",
+      "sharedImage": false,
+      "mirrored": true,
+      "pathByDirection": {
+        "S": "equipment/foot/boots/S.png",
+        "E": "equipment/foot/boots/E.png",
+        "N": "equipment/foot/boots/N.png",
+        "W": "equipment/foot/boots/W.png"
+      }
+    },
+    {
+      "id": "gloves",
+      "slot": "hand",
+      "sharedImage": true,
+      "mirrored": true,
+      "pose": "fist",
+      "path": "equipment/hand/gloves/single.png"
+    },
+    {
+      "id": "wrench",
+      "slot": "weapon",
+      "sharedImage": true,
+      "path": "equipment/weapon/wrench/single.png"
+    }
+  ],
+  "enemies": [
+    {
+      "id": "rust_hound",
+      "path": "enemy/rust_hound",
+      "displayHeight": 1.35,
       "actions": {
         "idle": {
-          "frames": 8,
-          "fps": 10,
+          "frames": 6,
+          "fps": 8,
           "loop": true
         },
         "walk": {
-          "frames": 8,
-          "fps": 12,
+          "frames": 6,
+          "fps": 14,
           "loop": true
+        },
+        "attack": {
+          "frames": 5,
+          "fps": 16,
+          "loop": false,
+          "eventFrames": [
+            3
+          ]
+        },
+        "hit": {
+          "frames": 3,
+          "fps": 20,
+          "loop": false
+        },
+        "death": {
+          "frames": 6,
+          "fps": 10,
+          "loop": false
         }
       }
     }
-  }
+  ]
 }

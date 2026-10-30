@@ -1,0 +1,642 @@
+{
+  "version": 2,
+  "count": 106,
+  "images": [
+    {
+      "id": "assets_sprites_role_common_S_calf_L",
+      "label": "calf_L S",
+      "path": "assets/sprites/role/common/S/calf_L.png",
+      "group": "身体部件 · 下(S)"
+    },
+    {
+      "id": "assets_sprites_role_common_S_calf_R",
+      "label": "calf_R S",
+      "path": "assets/sprites/role/common/S/calf_R.png",
+      "group": "身体部件 · 下(S)"
+    },
+    {
+      "id": "assets_sprites_role_common_S_forearm_L",
+      "label": "forearm_L S",
+      "path": "assets/sprites/role/common/S/forearm_L.png",
+      "group": "身体部件 · 下(S)"
+    },
+    {
+      "id": "assets_sprites_role_common_S_forearm_R",
+      "label": "forearm_R S",
+      "path": "assets/sprites/role/common/S/forearm_R.png",
+      "group": "身体部件 · 下(S)"
+    },
+    {
+      "id": "assets_sprites_role_common_S_head",
+      "label": "head S",
+      "path": "assets/sprites/role/common/S/head.png",
+      "group": "身体部件 · 下(S)"
+    },
+    {
+      "id": "assets_sprites_role_common_S_neck",
+      "label": "neck S",
+      "path": "assets/sprites/role/common/S/neck.png",
+      "group": "身体部件 · 下(S)"
+    },
+    {
+      "id": "assets_sprites_role_common_S_thigh_L",
+      "label": "thigh_L S",
+      "path": "assets/sprites/role/common/S/thigh_L.png",
+      "group": "身体部件 · 下(S)"
+    },
+    {
+      "id": "assets_sprites_role_common_S_thigh_R",
+      "label": "thigh_R S",
+      "path": "assets/sprites/role/common/S/thigh_R.png",
+      "group": "身体部件 · 下(S)"
+    },
+    {
+      "id": "assets_sprites_role_common_S_torso_L",
+      "label": "torso_L S",
+      "path": "assets/sprites/role/common/S/torso_L.png",
+      "group": "身体部件 · 下(S)"
+    },
+    {
+      "id": "assets_sprites_role_common_S_torso_U",
+      "label": "torso_U S",
+      "path": "assets/sprites/role/common/S/torso_U.png",
+      "group": "身体部件 · 下(S)"
+    },
+    {
+      "id": "assets_sprites_role_common_S_upper_arm_L",
+      "label": "upper_arm_L S",
+      "path": "assets/sprites/role/common/S/upper_arm_L.png",
+      "group": "身体部件 · 下(S)"
+    },
+    {
+      "id": "assets_sprites_role_common_S_upper_arm_R",
+      "label": "upper_arm_R S",
+      "path": "assets/sprites/role/common/S/upper_arm_R.png",
+      "group": "身体部件 · 下(S)"
+    },
+    {
+      "id": "assets_sprites_role_common_E_calf_L",
+      "label": "calf_L E",
+      "path": "assets/sprites/role/common/E/calf_L.png",
+      "group": "身体部件 · 右(E)"
+    },
+    {
+      "id": "assets_sprites_role_common_E_calf_R",
+      "label": "calf_R E",
+      "path": "assets/sprites/role/common/E/calf_R.png",
+      "group": "身体部件 · 右(E)"
+    },
+    {
+      "id": "assets_sprites_role_common_E_forearm_L",
+      "label": "forearm_L E",
+      "path": "assets/sprites/role/common/E/forearm_L.png",
+      "group": "身体部件 · 右(E)"
+    },
+    {
+      "id": "assets_sprites_role_common_E_forearm_R",
+      "label": "forearm_R E",
+      "path": "assets/sprites/role/common/E/forearm_R.png",
+      "group": "身体部件 · 右(E)"
+    },
+    {
+      "id": "assets_sprites_role_common_E_head",
+      "label": "head E",
+      "path": "assets/sprites/role/common/E/head.png",
+      "group": "身体部件 · 右(E)"
+    },
+    {
+      "id": "assets_sprites_role_common_E_neck",
+      "label": "neck E",
+      "path": "assets/sprites/role/common/E/neck.png",
+      "group": "身体部件 · 右(E)"
+    },
+    {
+      "id": "assets_sprites_role_common_E_thigh_L",
+      "label": "thigh_L E",
+      "path": "assets/sprites/role/common/E/thigh_L.png",
+      "group": "身体部件 · 右(E)"
+    },
+    {
+      "id": "assets_sprites_role_common_E_thigh_R",
+      "label": "thigh_R E",
+      "path": "assets/sprites/role/common/E/thigh_R.png",
+      "group": "身体部件 · 右(E)"
+    },
+    {
+      "id": "assets_sprites_role_common_E_torso_L",
+      "label": "torso_L E",
+      "path": "assets/sprites/role/common/E/torso_L.png",
+      "group": "身体部件 · 右(E)"
+    },
+    {
+      "id": "assets_sprites_role_common_E_torso_U",
+      "label": "torso_U E",
+      "path": "assets/sprites/role/common/E/torso_U.png",
+      "group": "身体部件 · 右(E)"
+    },
+    {
+      "id": "assets_sprites_role_common_E_upper_arm_L",
+      "label": "upper_arm_L E",
+      "path": "assets/sprites/role/common/E/upper_arm_L.png",
+      "group": "身体部件 · 右(E)"
+    },
+    {
+      "id": "assets_sprites_role_common_E_upper_arm_R",
+      "label": "upper_arm_R E",
+      "path": "assets/sprites/role/common/E/upper_arm_R.png",
+      "group": "身体部件 · 右(E)"
+    },
+    {
+      "id": "assets_sprites_role_common_N_calf_L",
+      "label": "calf_L N",
+      "path": "assets/sprites/role/common/N/calf_L.png",
+      "group": "身体部件 · 上(N)"
+    },
+    {
+      "id": "assets_sprites_role_common_N_calf_R",
+      "label": "calf_R N",
+      "path": "assets/sprites/role/common/N/calf_R.png",
+      "group": "身体部件 · 上(N)"
+    },
+    {
+      "id": "assets_sprites_role_common_N_forearm_L",
+      "label": "forearm_L N",
+      "path": "assets/sprites/role/common/N/forearm_L.png",
+      "group": "身体部件 · 上(N)"
+    },
+    {
+      "id": "assets_sprites_role_common_N_forearm_R",
+      "label": "forearm_R N",
+      "path": "assets/sprites/role/common/N/forearm_R.png",
+      "group": "身体部件 · 上(N)"
+    },
+    {
+      "id": "assets_sprites_role_common_N_head",
+      "label": "head N",
+      "path": "assets/sprites/role/common/N/head.png",
+      "group": "身体部件 · 上(N)"
+    },
+    {
+      "id": "assets_sprites_role_common_N_neck",
+      "label": "neck N",
+      "path": "assets/sprites/role/common/N/neck.png",
+      "group": "身体部件 · 上(N)"
+    },
+    {
+      "id": "assets_sprites_role_common_N_thigh_L",
+      "label": "thigh_L N",
+      "path": "assets/sprites/role/common/N/thigh_L.png",
+      "group": "身体部件 · 上(N)"
+    },
+    {
+      "id": "assets_sprites_role_common_N_thigh_R",
+      "label": "thigh_R N",
+      "path": "assets/sprites/role/common/N/thigh_R.png",
+      "group": "身体部件 · 上(N)"
+    },
+    {
+      "id": "assets_sprites_role_common_N_torso_L",
+      "label": "torso_L N",
+      "path": "assets/sprites/role/common/N/torso_L.png",
+      "group": "身体部件 · 上(N)"
+    },
+    {
+      "id": "assets_sprites_role_common_N_torso_U",
+      "label": "torso_U N",
+      "path": "assets/sprites/role/common/N/torso_U.png",
+      "group": "身体部件 · 上(N)"
+    },
+    {
+      "id": "assets_sprites_role_common_N_upper_arm_L",
+      "label": "upper_arm_L N",
+      "path": "assets/sprites/role/common/N/upper_arm_L.png",
+      "group": "身体部件 · 上(N)"
+    },
+    {
+      "id": "assets_sprites_role_common_N_upper_arm_R",
+      "label": "upper_arm_R N",
+      "path": "assets/sprites/role/common/N/upper_arm_R.png",
+      "group": "身体部件 · 上(N)"
+    },
+    {
+      "id": "assets_sprites_role_common_W_calf_L",
+      "label": "calf_L W",
+      "path": "assets/sprites/role/common/W/calf_L.png",
+      "group": "身体部件 · 左(W)"
+    },
+    {
+      "id": "assets_sprites_role_common_W_calf_R",
+      "label": "calf_R W",
+      "path": "assets/sprites/role/common/W/calf_R.png",
+      "group": "身体部件 · 左(W)"
+    },
+    {
+      "id": "assets_sprites_role_common_W_forearm_L",
+      "label": "forearm_L W",
+      "path": "assets/sprites/role/common/W/forearm_L.png",
+      "group": "身体部件 · 左(W)"
+    },
+    {
+      "id": "assets_sprites_role_common_W_forearm_R",
+      "label": "forearm_R W",
+      "path": "assets/sprites/role/common/W/forearm_R.png",
+      "group": "身体部件 · 左(W)"
+    },
+    {
+      "id": "assets_sprites_role_common_W_head",
+      "label": "head W",
+      "path": "assets/sprites/role/common/W/head.png",
+      "group": "身体部件 · 左(W)"
+    },
+    {
+      "id": "assets_sprites_role_common_W_neck",
+      "label": "neck W",
+      "path": "assets/sprites/role/common/W/neck.png",
+      "group": "身体部件 · 左(W)"
+    },
+    {
+      "id": "assets_sprites_role_common_W_thigh_L",
+      "label": "thigh_L W",
+      "path": "assets/sprites/role/common/W/thigh_L.png",
+      "group": "身体部件 · 左(W)"
+    },
+    {
+      "id": "assets_sprites_role_common_W_thigh_R",
+      "label": "thigh_R W",
+      "path": "assets/sprites/role/common/W/thigh_R.png",
+      "group": "身体部件 · 左(W)"
+    },
+    {
+      "id": "assets_sprites_role_common_W_torso_L",
+      "label": "torso_L W",
+      "path": "assets/sprites/role/common/W/torso_L.png",
+      "group": "身体部件 · 左(W)"
+    },
+    {
+      "id": "assets_sprites_role_common_W_torso_U",
+      "label": "torso_U W",
+      "path": "assets/sprites/role/common/W/torso_U.png",
+      "group": "身体部件 · 左(W)"
+    },
+    {
+      "id": "assets_sprites_role_common_W_upper_arm_L",
+      "label": "upper_arm_L W",
+      "path": "assets/sprites/role/common/W/upper_arm_L.png",
+      "group": "身体部件 · 左(W)"
+    },
+    {
+      "id": "assets_sprites_role_common_W_upper_arm_R",
+      "label": "upper_arm_R W",
+      "path": "assets/sprites/role/common/W/upper_arm_R.png",
+      "group": "身体部件 · 左(W)"
+    },
+    {
+      "id": "assets_sprites_equipment_back_brass_gears_E",
+      "label": "brass_gears E",
+      "path": "assets/sprites/equipment/back/brass_gears/E.png",
+      "group": "装备"
+    },
+    {
+      "id": "assets_sprites_equipment_back_brass_gears_N",
+      "label": "brass_gears N",
+      "path": "assets/sprites/equipment/back/brass_gears/N.png",
+      "group": "装备"
+    },
+    {
+      "id": "assets_sprites_equipment_back_brass_gears_S",
+      "label": "brass_gears S",
+      "path": "assets/sprites/equipment/back/brass_gears/S.png",
+      "group": "装备"
+    },
+    {
+      "id": "assets_sprites_equipment_back_brass_gears_W",
+      "label": "brass_gears W",
+      "path": "assets/sprites/equipment/back/brass_gears/W.png",
+      "group": "装备"
+    },
+    {
+      "id": "assets_sprites_equipment_foot_steel_boots_E",
+      "label": "steel_boots E",
+      "path": "assets/sprites/equipment/foot/steel_boots/E.png",
+      "group": "装备"
+    },
+    {
+      "id": "assets_sprites_equipment_foot_steel_boots_N",
+      "label": "steel_boots N",
+      "path": "assets/sprites/equipment/foot/steel_boots/N.png",
+      "group": "装备"
+    },
+    {
+      "id": "assets_sprites_equipment_foot_steel_boots_S",
+      "label": "steel_boots S",
+      "path": "assets/sprites/equipment/foot/steel_boots/S.png",
+      "group": "装备"
+    },
+    {
+      "id": "assets_sprites_equipment_foot_steel_boots_W",
+      "label": "steel_boots W",
+      "path": "assets/sprites/equipment/foot/steel_boots/W.png",
+      "group": "装备"
+    },
+    {
+      "id": "assets_sprites_equipment_hand_work_gloves_single",
+      "label": "work_gloves (通用)",
+      "path": "assets/sprites/equipment/hand/work_gloves/single.png",
+      "group": "装备"
+    },
+    {
+      "id": "assets_sprites_equipment_hat_engineer_helmet_E",
+      "label": "engineer_helmet E",
+      "path": "assets/sprites/equipment/hat/engineer_helmet/E.png",
+      "group": "装备"
+    },
+    {
+      "id": "assets_sprites_equipment_hat_engineer_helmet_N",
+      "label": "engineer_helmet N",
+      "path": "assets/sprites/equipment/hat/engineer_helmet/N.png",
+      "group": "装备"
+    },
+    {
+      "id": "assets_sprites_equipment_hat_engineer_helmet_S",
+      "label": "engineer_helmet S",
+      "path": "assets/sprites/equipment/hat/engineer_helmet/S.png",
+      "group": "装备"
+    },
+    {
+      "id": "assets_sprites_equipment_hat_engineer_helmet_W",
+      "label": "engineer_helmet W",
+      "path": "assets/sprites/equipment/hat/engineer_helmet/W.png",
+      "group": "装备"
+    },
+    {
+      "id": "assets_sprites_equipment_weapon_wrench_single",
+      "label": "wrench (通用)",
+      "path": "assets/sprites/equipment/weapon/wrench/single.png",
+      "group": "装备"
+    },
+    {
+      "id": "assets_sprites_role_engineer_spanner_E",
+      "label": "engineer_spanner E",
+      "path": "assets/sprites/role/engineer_spanner/E.png",
+      "group": "整体角色"
+    },
+    {
+      "id": "assets_sprites_role_engineer_spanner_N",
+      "label": "engineer_spanner N",
+      "path": "assets/sprites/role/engineer_spanner/N.png",
+      "group": "整体角色"
+    },
+    {
+      "id": "assets_sprites_role_engineer_spanner_S",
+      "label": "engineer_spanner S",
+      "path": "assets/sprites/role/engineer_spanner/S.png",
+      "group": "整体角色"
+    },
+    {
+      "id": "assets_sprites_role_engineer_spanner_W",
+      "label": "engineer_spanner W",
+      "path": "assets/sprites/role/engineer_spanner/W.png",
+      "group": "整体角色"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_attack_E",
+      "label": "attack/E",
+      "path": "assets/sprites/enemy/rust_hound/attack/E.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_attack_N",
+      "label": "attack/N",
+      "path": "assets/sprites/enemy/rust_hound/attack/N.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_attack_NE",
+      "label": "attack/NE",
+      "path": "assets/sprites/enemy/rust_hound/attack/NE.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_attack_NW",
+      "label": "attack/NW",
+      "path": "assets/sprites/enemy/rust_hound/attack/NW.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_attack_S",
+      "label": "attack/S",
+      "path": "assets/sprites/enemy/rust_hound/attack/S.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_attack_SE",
+      "label": "attack/SE",
+      "path": "assets/sprites/enemy/rust_hound/attack/SE.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_attack_SW",
+      "label": "attack/SW",
+      "path": "assets/sprites/enemy/rust_hound/attack/SW.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_attack_W",
+      "label": "attack/W",
+      "path": "assets/sprites/enemy/rust_hound/attack/W.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_death_E",
+      "label": "death/E",
+      "path": "assets/sprites/enemy/rust_hound/death/E.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_death_N",
+      "label": "death/N",
+      "path": "assets/sprites/enemy/rust_hound/death/N.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_death_NE",
+      "label": "death/NE",
+      "path": "assets/sprites/enemy/rust_hound/death/NE.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_death_NW",
+      "label": "death/NW",
+      "path": "assets/sprites/enemy/rust_hound/death/NW.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_death_S",
+      "label": "death/S",
+      "path": "assets/sprites/enemy/rust_hound/death/S.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_death_SE",
+      "label": "death/SE",
+      "path": "assets/sprites/enemy/rust_hound/death/SE.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_death_SW",
+      "label": "death/SW",
+      "path": "assets/sprites/enemy/rust_hound/death/SW.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_death_W",
+      "label": "death/W",
+      "path": "assets/sprites/enemy/rust_hound/death/W.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_hit_E",
+      "label": "hit/E",
+      "path": "assets/sprites/enemy/rust_hound/hit/E.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_hit_N",
+      "label": "hit/N",
+      "path": "assets/sprites/enemy/rust_hound/hit/N.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_hit_NE",
+      "label": "hit/NE",
+      "path": "assets/sprites/enemy/rust_hound/hit/NE.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_hit_NW",
+      "label": "hit/NW",
+      "path": "assets/sprites/enemy/rust_hound/hit/NW.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_hit_S",
+      "label": "hit/S",
+      "path": "assets/sprites/enemy/rust_hound/hit/S.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_hit_SE",
+      "label": "hit/SE",
+      "path": "assets/sprites/enemy/rust_hound/hit/SE.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_hit_SW",
+      "label": "hit/SW",
+      "path": "assets/sprites/enemy/rust_hound/hit/SW.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_hit_W",
+      "label": "hit/W",
+      "path": "assets/sprites/enemy/rust_hound/hit/W.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_idle_E",
+      "label": "idle/E",
+      "path": "assets/sprites/enemy/rust_hound/idle/E.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_idle_N",
+      "label": "idle/N",
+      "path": "assets/sprites/enemy/rust_hound/idle/N.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_idle_NE",
+      "label": "idle/NE",
+      "path": "assets/sprites/enemy/rust_hound/idle/NE.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_idle_NW",
+      "label": "idle/NW",
+      "path": "assets/sprites/enemy/rust_hound/idle/NW.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_idle_S",
+      "label": "idle/S",
+      "path": "assets/sprites/enemy/rust_hound/idle/S.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_idle_SE",
+      "label": "idle/SE",
+      "path": "assets/sprites/enemy/rust_hound/idle/SE.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_idle_SW",
+      "label": "idle/SW",
+      "path": "assets/sprites/enemy/rust_hound/idle/SW.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_idle_W",
+      "label": "idle/W",
+      "path": "assets/sprites/enemy/rust_hound/idle/W.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_walk_E",
+      "label": "walk/E",
+      "path": "assets/sprites/enemy/rust_hound/walk/E.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_walk_N",
+      "label": "walk/N",
+      "path": "assets/sprites/enemy/rust_hound/walk/N.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_walk_NE",
+      "label": "walk/NE",
+      "path": "assets/sprites/enemy/rust_hound/walk/NE.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_walk_NW",
+      "label": "walk/NW",
+      "path": "assets/sprites/enemy/rust_hound/walk/NW.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_walk_S",
+      "label": "walk/S",
+      "path": "assets/sprites/enemy/rust_hound/walk/S.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_walk_SE",
+      "label": "walk/SE",
+      "path": "assets/sprites/enemy/rust_hound/walk/SE.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_walk_SW",
+      "label": "walk/SW",
+      "path": "assets/sprites/enemy/rust_hound/walk/SW.png",
+      "group": "敌人 · rust_hound"
+    },
+    {
+      "id": "assets_sprites_enemy_rust_hound_walk_W",
+      "label": "walk/W",
+      "path": "assets/sprites/enemy/rust_hound/walk/W.png",
+      "group": "敌人 · rust_hound"
+    }
+  ]
+}
