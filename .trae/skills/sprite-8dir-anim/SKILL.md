@@ -1,505 +1,511 @@
 ---
 name: "sprite-8dir-anim"
-description: "8-direction high-quality character body-part sprite generation spec. Invoke when creating sprite sheets, body-part chunks, or character assets for the game."
+description: "Unified generation spec for block-assembled characters, shared equipment, and frame-animated monsters (Don't Starve style). Invoke when creating character body parts, shared heads/equipment, or monster sprite sheets for the game."
 ---
 
-# 2D 角色 8 方向身体分块（Part-Sprite）生成 Skill
+# 《饥荒》式角色 · 装备 · 怪物 统一生成 Skill
 
-> 本 Skill 是本项目角色精灵图资源的**唯一标准**。与传统"帧动画精灵表"完全不同：**一个角色 = 多块身体分图（头、躯干、上臂、前臂、腿、脚、武器）**，每块独立绘制、独立打包，由引擎代码负责在运行时组装成完整角色。**本 Skill 不涉及任何帧动画**。
-
----
-
-## 0. 核心范式（先理解再动手）
-
-| 项目 | 本 Skill（身体分块） | 已废弃（帧动画） |
-|------|---------------------|------------------|
-| 一个角色产出 | `N 块身体部件 × 8 方向` 静态图 | `M 个动作 × 8 方向 × F 帧` 动画条带 |
-| 动画来源 | 引擎在运行时对各部件做 IK / 骨架插值 / 位置切换 | 美术手绘每一帧 |
-| 新增动作 | 零成本（加一组关键姿态 pose.json，让引擎插值） | 重画 M×F 张图 |
-| 方向成本 | 8 × N 张静态图，每块独立绘制不镜像 | 8 × M × F 张，且斜向方向独立重绘 |
-| 武器/披风/背包 | 独立部件，可与角色解耦替换 | 绑定在整张图里，换武器就得重画所有帧 |
-| 美术修改 | 改一块头 = 改 8 张小图 | 改头 = 重画所有动作所有方向所有帧 |
-
-**本 Skill 不产出任何帧图、不产出任何精灵条带、不讨论帧数/帧率/循环/首尾连续**。这些属于已废弃范式。
-
----
-
-## 1. 硬性约束（不可协商）
-
-- **8 方向全部独立绘制**：禁止旋转生成、禁止镜像复用、禁止斜向复用水平/垂直。方向集合固定，角度以摄像机为基准（朝下为 0°，顺时针递增）：
-
-  | 方向 | 全称 | 朝向角度 |
-  |------|------|---------|
-  | S    | 下/朝镜头   | 0°      |
-  | SE   | 右下       | 45°     |
-  | E    | 右         | 90°     |
-  | NE   | 右上       | 135°    |
-  | N    | 上/背对     | 180°    |
-  | NW   | 左上       | 225°    |
-  | W    | 左         | 270°    |
-  | SW   | 左下       | 315°    |
-
-- **每块部件 8 方向规格完全一致**：画布、轴心（挂点）、脚底基准线逐部件逐方向对齐。
-- **不对称元素独立体现**：武器手、披风、单侧护甲、发型分缝在 8 方向下各自朝向正确，**不依赖翻转**。
-- **一块部件一张图**：大模型**必须一次性直接生成该部件在该方向下的完整图**。禁止拼接多张小图。
-- **CharacterLock 统一参考**：先生成一张角色整体 pose（基准方向），PIL 抠出存为 `keyframes/character_keyframe.png`，后续所有部件所有方向生成**必须显式带上这张图作参考**。
-
----
-
-## 2. 身体分块清单（《闪克》式粗粒度模板）
-
-### 2.1 设计理念（先理解再拆）
-
-《闪克》(Shank, Klei Entertainment 2010) 的分块思路是**把角色从逐关节的 14+ 块，浓缩成 4–5 块粗粒度部件**：
-
-| 《闪克》做法 | 为什么这样拆 |
-|-------------|------------|
-| 身体是**一整块 `body`**（躯干 + 上臂 + 前臂 + 腿 + 脚全部拼在一起） | 动作/走路由引擎里的骨架 + IK 驱动手和腿的位置偏移，**不是画多帧**，所以身体不需要逐关节切 |
-| 头是独立块 `head` | Shank 可以让头单独做 8 方向旋转（身体不换），引擎切换头图即可；换发型/护目镜也只换头 |
-| 武器是独立块 `weapon_R / weapon_L`，**不含手** | 武器挂在 `body` 上的 `hand_R_anchor` / `hand_L_anchor`，手由 `body` 自己提供；Shank 核心卖点——3 把武器随时切换（弯刀/电锯/手枪）就是换一张 weapon 图 |
-| 披风/背包是可选 DLC 层 | `cape / backpack` 挂在背部，有独立物理（风吹、跳跃飘动） |
-
-**为什么选这个范式**：比逐关节切少 70% 部件，引擎骨架 + IK 已能覆盖 idle/walk/run/attack/hit/death 全部动作，换武器换头成本趋近于零。代价是引擎必须实现一个轻量的 2D 骨架（每根 bone 1 个 anchor + rotation）。
-
-### 2.2 分块清单（强制 4–5 块 + 可选装饰层）
-
-每个角色先填下面这张表，**确认分块后再进入生成**。字段 `slot` 是引擎挂点名，与代码常量一致：
-
-#### 基础块（每角色必出，不可缺）
-
-| slot | 名称 | 典型内容 | 内含挂点 | 可独立替换 |
-|------|------|---------|---------|----------|
-| `body` | 身体（整块） | 夹克 + 工装 + 上臂 + 前臂 + 腿 + 靴子 **全部**拼在一起 | `hand_L_anchor / hand_R_anchor / neck_anchor / foot_anchor` | ❌ 整身换 |
-| `head` | 头 | 脸型、头发、护目镜、**不含脖子** | `neck_anchor`（与 body 的 neck_anchor 对齐） | ✅ 发型/护目镜单独换 |
-
-#### 武器块（每角色按职业出，1–4 把）
-
-| slot | 名称 | 典型内容 | 内含挂点 | 可独立替换 |
-|------|------|---------|---------|----------|
-| `weapon_R` | 主武器（右手） | 扳手 / 弯刀 / 电锯 / 枪 **仅画武器本身**，不含手/臂 | `hilt_anchor`（与 body 的 `hand_R_anchor` 对齐） | ✅ 随意换 |
-| `weapon_L` | 副手武器（左手，可选） |  watering can / 盾 / 短匕首 | `hilt_anchor`（与 body 的 `hand_L_anchor` 对齐） | ✅ 随意换 |
-
-#### 装饰块（可选 DLC 层，0–3 层）
-
-| slot | 名称 | 典型内容 | 内含挂点 | 可独立替换 |
-|------|------|---------|---------|----------|
-| `cape` | 披风 | 披风本体，不含肩 | `top_anchor`（与 body 背部挂点对齐） | ✅ |
-| `backpack` | 背包/背饰 | 黄铜齿轮 + 铜管 / 背包 | `top_anchor` | ✅ |
-| `hip_bag_L` | 左胯包 | 工具袋 | `hip_anchor` | ✅ |
-
-### 2.3 分块原则（强制）
-
-1. **`body` 画成一整块完整角色图**——包含躯干、两条上臂、两条前臂、两条腿、两只靴子，边界只在 **脖子顶端**（上面交给 `head`）和 **双手武器挂点**（武器的 hilt 接在这里）。严禁在肩/肘/髋/膝切关节。
-2. **`head` 不含脖子**——脖子属于 `body`（否则头换上去会飘）。`head` 图的 `neck_anchor` 必须精确落在脖子顶端中心。
-3. **武器块不含手**——武器图的 `hilt_anchor` 必须画在握柄中心（引擎把它贴到 `body` 的手挂点）。画武器时不要画手、不要画手臂残段、不要画"握着手套"的样子。
-4. **每块图自身就是完整独立精灵**——PIL 单独预览不透明区域，无需依赖其他块的透明区即可看清边界。
-5. **Z 顺序固定**（后面的盖前面的）：`backpack → cape → body → weapon_L → weapon_R → head`。`body` 是中间层，武器盖在手上，头盖在脖子上。
-
-### 2.4 挂点规范
-
-每个 slot 必须在 manifest 里声明自身的挂点像素坐标（相对该 slot 自己的画布，原点在左上）：
-
-| 挂点 | 属于哪个 slot | 作用 |
-|------|--------------|------|
-| `body.foot_anchor` | body | 脚底中心，**引擎世界锚点** |
-| `body.neck_anchor` | body | 脖子顶端中心，头挂这里 |
-| `body.hand_L_anchor` | body | 左手掌中心，副手武器挂这里 |
-| `body.hand_R_anchor` | body | 右手掌中心，主武器挂这里 |
-| `body.back_anchor` | body | 背部中心，cape / backpack 挂这里 |
-| `head.neck_anchor` | head | 脖子中心（与 body.neck_anchor 对齐） |
-| `weapon_R.hilt_anchor` | weapon_R | 武器握柄中心（与 body.hand_R_anchor 对齐） |
-| `weapon_L.hilt_anchor` | weapon_L | 武器握柄中心（与 body.hand_L_anchor 对齐） |
-
-**全方向强制一致**：同一个 slot 的挂点坐标 8 方向完全相同（否则方向切换时头/武器会抖）。
-
-### 2.5 本项目默认分块实例
-
-> 工程师角色的配置（示例，不是固定值）：
+> 本 Skill 是本项目 **所有角色资源的唯一标准**。覆盖三种产出：
+> 1. **角色身体部件**（分块组装，身体全项目共享，新角色只换头）
+> 2. **装备**（全角色共用，武器/手套共用 1 张图，其他 4 方向）
+> 3. **怪物**（帧动画，4 方向 5 动作，一方向走完再进下一个）
 >
-> | slot | 内容 | 挂点数 |
-> |------|------|-------|
-> | `body` | 棕色皮夹克 + 深蓝工装 + 上臂前臂 + 右腿左腿 + 棕靴 + 左胯工具袋 | 5（foot / neck / hand_L / hand_R / back） |
-> | `head` | 棕色刺头 + 护目镜 + 大圆眼镜 + 钩鼻 + 胡茬 | 1（neck） |
-> | `weapon_R` | 金属开口扳手（无手） | 1（hilt） |
-> | `weapon_L` | 黄铜洒水壶（无手） | 1（hilt） |
-> | `backpack` | 黄铜齿轮 + 铜管 | 1（top） |
-> | — | `hip_bag_L` 已合并进 body（本项目作为衣服装饰，不单独换） | — |
+> 三种产出统一使用 **"一个方向一张大图 + 等宽高网格排布 + 脚本裁剪"** 的生成方式，大模型不需要理解部件边界——只要按网格画，脚本负责一切切分与对齐。
 
 ---
 
-## 3. 输入契约（生成前必须收集）
+## 0. 统一生成范式（三种产出通用）
 
-### 3.1 角色与风格
-- 角色名 / 角色 ID
-- 美术风格：像素风 / 手绘卡通 / 写实厚涂 / 矢量
-- Don't Starve 风格关键特征：厚黑描边、平涂 cel shading、头大身小（头:身 ≈ 1:3.5）、黄铜/锈/深蓝调色板
-- 抗锯齿：像素风必须关闭；其他按风格统一
-- 颜色模式：sRGB（默认）
-- **不对称特征清单**：持武器手、披风侧、单侧护甲、发型分缝——8 方向下逐方向确认朝向
-- 部件清单确认（第 2 节模板）
+### 0.1 大图 + 网格裁剪
 
-### 3.2 视角与透视
-- 摄像机视角：正俯视 / 斜 45° 等距 / 伪 3D 纵深（8 方向必须明确）
-- 透视规则：各方向躯体压缩比、脚底与地面接触关系、斜向方向的透视缩短比例
-- 基准方向：通常 E 或 S，其余 7 方向相对基准的角度与透视规则
+**一个方向 = 一张大图**。大模型把该方向下的所有内容（角色身体部件 / 装备 / 怪物某动作的所有帧）按等宽高的网格排布在一张图上。**大图上不画网格线**——网格只在 prompt 里告诉模型"每行几格、每列几格"，脚本根据 `gridSize` 参数切分。
 
-### 3.3 画布与技术规格
-- 每块部件**单独定画布**：按该部件所有方向的最大包围盒 + 安全边距（2–4 px）确定，不同 slot 画布可以不同
-- 每个 slot 自己的挂点（anchor）：部件被挂到哪个位置（例如 `body` 图自带 `foot_anchor` 作为引擎世界锚点，`head.neck_anchor` 必须与 `body.neck_anchor` 精确对齐）
-- 挂点坐标：每个 slot 的 anchor **全方向必须一致**（否则部件在方向切换时会跳）
-- 脚底基准线 Y：`body.foot_anchor`，其他部件挂点相对它定位
-- 透明通道：必须
-- 交付格式：PNG（单张静态图）+ manifest.json
-- 过滤方式：像素风 Point/Nearest，手绘风按项目
+```
+示例：角色身体 S 方向大图
+┌─────┬─────┬─────┬─────┐
+│ 头  │ 脖  │     │     │  ← 1 行 12 格（9 个部件 + 3 个占位）
+├─────┼─────┼─────┼─────┤     每格都是正方形 512×512
+│上躯干│下躯干│     │     │
+├─────┼─────┼─────┼─────┤
+│上臂_L│上臂_R│     │     │
+├─────┼─────┼─────┼─────┤
+│下臂_L│下臂_R│     │     │
+├─────┼─────┼─────┼─────┤
+│大腿_L│大腿_R│     │     │
+├─────┼─────┼─────┼─────┤
+│小腿_L│小腿_R│     │     │
+└─────┴─────┴─────┴─────┘
+```
+
+### 0.2 关键对齐规则（强制）
+
+1. **同一方向大图内，所有部件的脚底对齐线（foot baseline）必须落在完全相同的像素 Y 坐标**。这样脚本裁剪后，所有部件图叠到同一坐标系直接拼出角色，**不需要引擎做任何位移**。
+2. **所有大图的网格尺寸相同**（例如全部 512×512），脚本一套参数切到底。
+3. **网格都是正方形**（`gridW = gridH`），方便模型和脚本统一处理。
+
+### 0.3 方向顺序（强制 S → E → N → W）
+
+所有多方向产出（角色、装备、怪物）**必须按 下→右→上→左 的顺序依次生成**：
+
+| 顺序 | 方向 | 说明 |
+|------|------|------|
+| 1    | S 下 | 朝镜头（第一帧，无参考图，纯 CharacterLock） |
+| 2    | E 右 | 必须用 **S 方向已完成的大图** 作参考 |
+| 3    | N 上 | 必须用 **E 方向已完成的大图** 作参考 |
+| 4    | W 左 | 必须用 **N 方向已完成的大图** 作参考 |
+
+这样做的原因：模型逐方向参考能保证同方向内角色比例、配色、不对称元素（武器手、发型分缝）自然过渡，不会每个方向都像换了个角色。
+
+### 0.4 大图规格（全项目统一）
+
+| 参数 | 值 | 说明 |
+|------|-----|------|
+| 网格尺寸 | **512×512** | 正方形，每格都是一个部件/一帧 |
+| 大图尺寸 | 由网格数决定 | 例如 3 列 × 6 行 → 1536 × 3072 |
+| 透明通道 | 必须 | 大图除角色外全部透明 |
+| 背景 | **纯白 + 极细浅灰色网格线**（仅用于大模型定位，脚本裁掉） |
+
+**Prompt 里固定写**：`Grid cells are 512x512. The whole image is a white canvas with 512px light gray grid lines drawn ONLY to help placement — final cutouts must have transparent backgrounds.`
 
 ---
 
-## 4. 生成流程
+## 1. 角色身体部件（分块组装，全项目共享）
 
-### Step 0：先生成角色整体 pose（基准方向）→ 抠 character_keyframe
+### 1.1 部件清单（强制 12 块）
 
-**不预生成独立正视图 ref**。先用 CharacterLock + ViewLock（基准方向，通常 E 或 S）生成一张**单帧完整角色姿态图**（不是动画），再从中抠角色参考。
+所有角色身体共用，新角色**只生成 8 方向的头**即可。清单固定：
 
-**流程**：
-1. CharacterLock + ViewLock(基准方向) + 站立姿态描述，**一次性生成一张完整角色静态图**
-2. PIL 抠出角色 → 存为 `character_{id}/keyframes/character_keyframe.png`
-3. manifest.json 记录 `characterKeyframe.path` + `characterKeyframe.hash`
-4. 后续所有部件、所有方向生成**必须显式带上这张 keyframe 图作为参考**
+| 编号 | slot | 名称 | Don't Starve 风格说明 |
+|------|------|------|---------------------|
+| 0  | `head`       | 头       | 含脸型、头发、眼镜/护目镜 |
+| 1  | `neck`       | 脖子     | **线状物**——细杆 + 关节球 |
+| 2  | `torso_U`    | 上躯干   | 夹克/工装上半 |
+| 3  | `torso_L`    | 下躯干   | 裤子上半 / 腰带 |
+| 4  | `upper_arm_L` | 左上臂   | **线状物**——肩到肘的细杆 + 肘球 |
+| 5  | `upper_arm_R` | 右上臂   | **线状物**——肩到肘的细杆 + 肘球 |
+| 6  | `forearm_L`  | 左前臂   | **线状物**——肘到腕的细杆 + 腕球 + 手套 |
+| 7  | `forearm_R`  | 右前臂   | **线状物**——肘到腕的细杆 + 腕球 + 手套 |
+| 8  | `thigh_L`    | 左大腿   | **线状物**——胯到膝的细杆 + 膝球 |
+| 9  | `thigh_R`    | 右大腿   | **线状物**——胯到膝的细杆 + 膝球 |
+| 10 | `calf_L`     | 左小腿   | **线状物**——膝到踝的细杆 + 踝球 + 靴子 |
+| 11 | `calf_R`     | 右小腿   | **线状物**——膝到踝的细杆 + 踝球 + 靴子 |
 
-**使用规则**：
-- character_keyframe.png 只生成一次，锁定不可修改
-- 若需改角色外观必须重新走完整流程
+**躯干 4 方向要求合理**：模型画 torso_U / torso_L 时，要让它在等距投影下从 S/E/N/W 4 个角度都看起来自然，不是严格的正面/侧面轮廓——这是 Don't Starve 等距透视的精髓。
 
-### Step 1：规格校验 + Prompt 模板锁定
+### 1.2 一方向大图布局
 
-#### 1.1 规格校验（进入生成前）
-- 每个 slot 的画布、anchor 全方向一致
-- 8 方向命名完整统一
-- 部件边界在关节处
-- CharacterLock 段一字不改
-- **不通过打回，不进入生成**
-
-#### 1.2 Prompt 三段拆分（强制）
-所有大模型生图 prompt 必须拆为以下三段，**CharacterLock 段在所有批次中完全复用，一字不改**：
+每个方向一张大图，所有部件按固定顺序填入网格。**S 方向布局模板**（其他方向同布局，只是部件内容按方向变）：
 
 ```
-[CharacterLock —— 角色锁，全文复用]
-{id} steam-punk engineer: adult male, short dark brown hair with left-side part, round wire-rimmed glasses, navy blue overalls with brass rivets, brown leather tool belt with tool pouch on LEFT hip, RIGHT hand holds metallic open-end wrench, copper pipes on right shoulder, brown leather work boots. Hand-painted digital art style, sRGB, soft anti-aliasing, transparent background.
-
-[ViewLock —— 视角锁，仅改变方向描述]
-Facing East (right, 90°, pure side profile).
-// Facing South (facing camera, front view).
-// Facing Southeast (45° isometric, half-front).
-// ... 8 方向各自一条
-
-[PartDesc —— 本次生成的部件描述]
-Only the head slot: face, hair, glasses, goggles. No body, no arms, no legs. Painted on transparent background. Upper boundary just above hair, lower boundary at neck joint. Anchor at neck center.
+列  0       1        2         3
+行0  head   neck     (空)      (空)
+行1  torso_U torso_L (空)      (空)
+行2  upper_arm_L    upper_arm_R  (空)  (空)
+行3  forearm_L      forearm_R    (空)  (空)
+行4  thigh_L        thigh_R      (空)  (空)
+行5  calf_L         calf_R       (空)  (空)
 ```
 
-### Step 2：逐部件逐方向独立生成（主流程）
+大图尺寸 = 4 列 × 512 × 6 行 × 512 = **2048 × 3072**。
 
-**每个 slot 每个方向 → 一次 GenerateImage 调用 → 一张完整静态图**。不拼接。
+**所有部件的脚底对齐线（foot baseline）落在大图统一的某个 Y**（例如 S 方向，`calf_L / calf_R` 的脚底正好在该列网格底部 20px 处；其他行的部件脚基线也对齐到大图中的同一 Y）。
 
-**主流程 Prompt 模板**（以 head_SE 为例）：
+### 1.3 部件自身在网格内的位置
+
+每个部件画在自己的 512×512 网格内时，**必须占据网格的中央，四周留有均匀透明边距**。这样脚本裁剪后，部件自身的局部坐标系的脚底（或脖子顶，依部件而定）就能叠到统一的 foot baseline 上。Prompt 里显式写：
+
+> `Each body part is centered in its 512x512 cell with equal transparent padding on all sides. No part touches a grid edge.`
+
+### 1.4 角色身体生成流程
+
+1. **S 方向**：CharacterLock（身体描述） + ViewLock(S) + 布局模板 + 规格，一次性生成 S 方向大图（无参考图）
+2. **E 方向**：CharacterLock + ViewLock(E) + 布局模板 + 规格 + **把刚生成的 S 方向大图作为参考图** 传给模型
+3. **N 方向**：同 2，参考图换成刚生成的 E 方向大图
+4. **W 方向**：同 2，参考图换成刚生成的 N 方向大图
+
+**12 块部件 × 4 方向 = 48 张小图**，由一个 Python 脚本统一裁剪，产出 `parts/{dir}/{slot}.png`。
+
+### 1.5 新角色生成流程（极简）
+
+新角色 = **只生成 4 方向的 head 大图**（布局简化为 1 行 4 列：head_S / head_E / head_N / head_W）。生成规则同 1.4 的顺序与参考链。其余 11 块身体部件直接从 `shared_bodies/` 目录复用。
+
+### 1.6 角色身体 Z 层（方向不同，层级不同）
+
+分块拼接时，不同方向的遮罩顺序不同（典型示例，按玩家面向为右 → W 方向时左右镜像）：
+
+| 方向 | Z 顺序（后画在上） |
+|------|-------------------|
+| S 下 | `thigh_L → thigh_R → calf_L → calf_R → torso_L → torso_U → neck → upper_arm_L → upper_arm_R → forearm_L → forearm_R → head` |
+| E 右 | `thigh_L → torso → calf_R → forearm_R → head → (mirror L/R)` |
+| N 上 | 所有前后腿顺序反过来，前臂在后 |
+| W 左 | 与 E 右镜像对称 |
+
+**Z 顺序存到 manifest 的 `zOrderByDirection` 字段**，引擎按方向查。
+
+### 1.7 角色身体大图 Prompt 模板（以 S 方向为例）
+
+```
+[CharacterLock —— 全文复用]
+Steam-punk engineer body (NO head, head generated separately): brown leather jacket, navy blue overalls with brass rivets, brown leather tool belt on LEFT hip, copper pipes on right shoulder, brown leather work boots. Limbs and neck drawn as Don't Starve style — thin rods + round ball joints at shoulder, elbow, wrist, hip, knee, ankle. Hand-painted digital art, thick black outlines, flat cel shading, sRGB. Transparent background.
+
+[ViewLock —— Facing South, directly toward camera, 0°]
+Looking straight down. Legs stand shoulder-width apart, both hands hang at sides. All body parts face the viewer directly.
+
+[Layout]
+One BIG image. Grid cells 512x512 square. Layout:
+  Row 0:  [head] [neck] [empty] [empty]
+  Row 1:  [torso_U] [torso_L] [empty] [empty]
+  Row 2:  [upper_arm_L] [upper_arm_R] [empty] [empty]
+  Row 3:  [forearm_L] [forearm_R] [empty] [empty]
+  Row 4:  [thigh_L] [thigh_R] [empty] [empty]
+  Row 5:  [calf_L] [calf_R] [empty] [empty]
+
+[CRITICAL]
+- Grid cells are 512x512.
+- Draw ONLY these 12 body parts. NO head face/hair — head is generated separately.
+- Every part is CENTERED in its cell with equal transparent padding.
+- All 12 parts MUST share the SAME foot baseline Y coordinate in the BIG image.
+- Neck, arms, forearms, thighs, calves are thin rods + round ball joints.
+- Torso_U and torso_L must look reasonable from all 4 directions — use isometric projection, not pure front/side.
+- Transparent background ONLY for the cutout parts.
+- NO numbered labels, NO text, NO watermarks, NO environment.
+```
+
+---
+
+## 2. 装备（全角色共用）
+
+### 2.1 装备清单
+
+| slot | 名称 | 生成方式 | 原因 |
+|------|------|---------|------|
+| `hat`      | 帽子   | 4 方向（S→E→N→W，前一方向参考） | 帽子方向变化明显 |
+| `cape`     | 披风   | 4 方向 | 披风背面在 N 方向可见 |
+| `clothes`  | 衣服   | 4 方向 | 外层外套替换身体 torso 的显示 |
+| `shoes`    | 鞋子   | 4 方向 | 靴筒方向变化 |
+| `backpack` | 背包   | 4 方向 | 背部可见性 |
+| `gloves`   | 手套   | **1 张共用图** | 手套小、方向变化微 |
+| `weapon`   | 武器   | **1 张共用图** | Shank 式武器挂手，4 方向共用 |
+
+### 2.2 装备大图布局
+
+**需要 4 方向的装备**（hat/cape/clothes/shoes/backpack）：每个装备一张大图，4 行 1 列布局（S / E / N / W 各占一行），每格 512×512。大图尺寸 = 512 × 2048。
+
+**共用 1 张图的装备**（weapon/gloves）：一张图 1 格 512×512，无方向。
+
+装备 Prompt 模板结构同角色身体（CharacterLock → ViewLock → Layout → CRITICAL + 前一方向作参考）。
+
+### 2.3 装备挂载点
+
+- `hat`：挂在角色 `head` 图顶端中心
+- `cape / backpack`：挂在角色 `torso_U` 图背部中心
+- `clothes`：**替换**角色 `torso_U + torso_L` 的显示（角色 torso 变成透明，装备衣服画完整躯干）
+- `shoes`：**替换**角色 `calf_L + calf_R` 的靴子部分（小腿继续画，靴子换成装备）
+- `gloves`：**替换**角色 `forearm_L + forearm_R` 的手套部分
+- `weapon`：挂在角色 `forearm_R` 图的手掌中心
+
+---
+
+## 3. 怪物（帧动画，不分块）
+
+### 3.1 生成范式
+
+怪物不使用分块——**直接生成帧动画大图**。一方向内，先走完所有动作（站立 → 行走 → 攻击 → 受击 → 死亡）再进下一个方向。
+
+**方向顺序**：S → E → N → W（与角色相同）
+**动作顺序（一方向内）**：`idle` → `walk` → `attack` → `hit` → `death`
+
+### 3.2 一方向内的参考链
+
+- 该方向第一张图 = idle（用 CharacterLock + ViewLock(方向)，无参考）
+- 该方向 walk / attack / hit / death 的参考图 = **该方向 idle 的第一帧**
+
+跨方向参考链不变：E 参考 S，N 参考 E，W 参考 N（但只参考 idle 图，因为前一方向的 idle 已经确定了怪物比例与配色）。
+
+### 3.3 一方向内 5 张大图布局
+
+一个方向 = **5 张大图**，每张图 = 一个动作的所有帧，帧按 1 行多列排布，每帧都是 512×512 网格。
+
+| 动作 | 帧数 | 大图尺寸（列×512 × 1行×512） | 说明 |
+|------|------|---------------------------|------|
+| idle   | 6    | 3072 × 512                | 循环，呼吸 |
+| walk   | 8    | 4096 × 512                | 循环，步态 |
+| attack | 5    | 2560 × 512                | 非循环，第 3 帧命中 |
+| hit    | 3    | 1536 × 512                | 非循环，退后 |
+| death  | 6    | 3072 × 512                | 非循环，倒地 |
+
+**所有大图网格尺寸相同（512×512）**，脚本统一切。同一方向内 5 张大图的怪物脚底对齐线必须一致（不同动作下怪的脚不飘）。
+
+### 3.4 怪物造型要求（简洁生动）
+
+- 零部件**控制在 5 个以内**（头、身体、腿、尾巴/武器、1 个标志性特征）
+- 不要画复杂机械结构、多层装甲、可拆卸附件——AI 多次生成时会不一致
+- Don't Starve 风格：厚黑描边、平涂 cel shading、头大身小（头:身 ≈ 1:3）、蓝/绿/棕/红调色板
+- 运动方式明确（走、跑、跳、爬行）
+
+### 3.5 怪物生成流程（完整示例）
+
+```
+方向 S：
+  1. GenerateImage → monster_idle_S.png（无参考，CharacterLock + ViewLock(S) + idle 描述）
+  2. GenerateImage → monster_walk_S.png（参考：monster_idle_S.png 第 1 帧）
+  3. GenerateImage → monster_attack_S.png（参考：monster_idle_S.png 第 1 帧）
+  4. GenerateImage → monster_hit_S.png（参考：monster_idle_S.png 第 1 帧）
+  5. GenerateImage → monster_death_S.png（参考：monster_idle_S.png 第 1 帧）
+
+方向 E：
+  6. GenerateImage → monster_idle_E.png（参考：monster_idle_S.png）
+  7. GenerateImage → monster_walk_E.png（参考：monster_idle_E.png 第 1 帧）
+  ...
+依此类推 N → W
+```
+
+### 3.6 怪物大图 Prompt 模板（monster_idle_S.png）
+
 ```
 [CharacterLock —— 全文复用，一字不改]
-[ViewLock —— Facing Southeast, 45° isometric, half-front]
+Rust Hound (锈蚀猎犬): small four-legged wolf-like creature, rust-brown fur with brass gears embedded in shoulders, glowing yellow eyes, exposed steel ribs on left side, curled brass wire tail. Simple 5-part silhouette. Thick black outlines, flat cel shading, Don't Starve style, sRGB.
 
-CRITICAL RULES — READ FIRST:
-- Draw ONLY ONE SINGLE STATIC IMAGE of ONE BODY PART.
-- NO numbered labels, NO frame numbers, NO circles, NO boxes, NO text, NO annotations, NO watermarks.
-- Transparent background ONLY — no ground, no shadows, no scenery, no environment.
-- Same scale, same art style, same outline thickness as the reference character_keyframe.
+[ViewLock —— Facing South, directly toward camera, 0°]
+Looking straight down. Hound stands in idle breathing pose, legs planted firmly.
 
-Part: head
-Contents: spiky messy dark brown hair, brass aviator goggles on forehead, large round glasses, big hooked nose, stubble beard.
-Cut boundary: upper edge above top hair, lower edge at neck joint (just below beard).
-Anchor point at neck center (the point where head attaches to body.neck_anchor).
-Facing Southeast means the face is in three-quarter view, nose and beard pointing toward the lower-right.
+[Layout]
+One BIG image. 1 row × 6 columns of 512x512 cells.
+  [frame 1] [frame 2] [frame 3] [frame 4] [frame 5] [frame 6]
+All frames show THE SAME hound, same size, same pose variation.
+
+[CRITICAL]
+- Grid cells are 512x512 square. All cells same size.
+- Idle animation, 6 frames, loopable. Frame 1 is base pose, frame 3 is max breath-in, frame 6 returns to base but NOT identical to frame 1.
+- Same hound in all 6 frames. Same brass gears, same rust fur pattern, same glowing eyes.
+- All 6 frames share the SAME foot baseline Y coordinate.
+- Transparent background ONLY. NO numbered labels, NO text, NO watermarks, NO environment.
+- Keep the hound simple — no more than 5 distinct parts visible.
 ```
 
-**Prompt 里必须显式禁止**：text / labels / watermarks / environment / 多帧。Seedream 等模型默认会加编号与场景，这是最严重的后处理问题。
-
-### Step 3：8 方向独立展开
-- 逐方向独立重绘，**禁止镜像翻转、禁止旋转裁剪**
-- 每个方向单独用 Step 2 的方式生成自己的部件图
-- 跨方向共享同一套 CharacterLock（保证角色一致性），ViewLock 改成对应方向
-- 每完成一个方向做方向一致性检查：比例、描边粗细、anchor 位置、不对称元素朝向
-
-### Step 4：部件拼接自检
-- PIL 把 `backpack + cape + body + weapon_L + weapon_R + head` 按 Z 顺序拼到一起
-- 拼完后与 character_keyframe 比较轮廓 SSIM（≥ 0.90 通过）
-- 拼缝处无明显错位、无白边、无上下飘
-- 跨方向切换时部件对齐稳定，不跳变
-
-### Step 5：技术处理
-- 透明背景、Alpha 预乘确认、无黑边
-- 像素风关闭抗锯齿与 mipmap
-- 导出 PNG + manifest.json
-
-### Step 6：元数据
-- 生成 manifest.json：角色 ID、ref 图路径与 hash、方向集合、每个 slot 的画布尺寸与 anchor、部件边界描述、Z 顺序
-- 每个 slot 可选附一张 `anchor_marker.png`（仅用于人眼校验，不进运行时）
-
----
-
-## 5. 质量门禁（QA Gate，逐项通过，任一失败打回）
-
-### 5.1 8 方向专项门禁
-
-| # | 检查项 | 通过标准 | 失败信号 / 反模式检测启发式 |
-|---|--------|---------|---------------------------|
-| D1 | 8 方向独立绘制 | 无旋转生成、无镜像复用、无斜向复用 | ① 某方向部件相对对称方向呈镜像（逐像素水平翻转相似度 > 0.95）；② 某方向可由相邻方向单应性变换得到 |
-| D2 | anchor 全方向一致 | 同一 slot 的 anchor 像素坐标 8 方向完全一致 | 任一方向 anchor 差 1 px 以上 |
-| D3 | 斜向透视正确 | 无旋转锯齿、无比例失真 | 斜向肢体细长/压扁超出设定压缩比 ±10%；边缘出现旋转锯齿 |
-| D4 | 不对称元素朝向 | 武器手、披风、单侧装饰 8 方向各自朝向正确 | 持武器手在 S/SE/E/NE 四方向都出现在画面同一侧（应随方向切换） |
-| D5 | 方向切换对齐 | 相邻方向切换部件整体对齐稳定 | 连续方向整体轮廓相似度跳变 > 阈值 |
-
-### 5.2 部件专项门禁
-
-| # | 检查项 | 通过标准 |
-|---|--------|---------|
-| P1 | 边界在关节处 | 部件切分不穿透肌肉/骨骼，关节处留白 2–3 px 避免拼缝 |
-| P2 | 上层遮挡关系正确 | `backpack → cape → body → weapon_L → weapon_R → head`，Z 顺序符合第 2.3 节模板 |
-| P3 | 单部件无多余内容 | 生成 head 时只有头，不夹带躯干/武器 |
-| P4 | 单部件无缺漏 | 所有声明 slot 在 8 方向都有文件 |
-| P5 | 跨 slot 风格一致 | 描边粗细、配色、cel shading 风格一致 |
-| P6 | 拼接无跳变 | 拼接后整体轮廓与 character_keyframe SSIM ≥ 0.90 |
-
-### 5.3 通用门禁
-
-| # | 检查项 | 通过标准 |
-|---|--------|---------|
-| G1 | 透明干净 | 透明背景无黑边/白边 |
-| G2 | 命名统一 | 目录：`{slot}/{dir}.png`；dir 固定 8 值 |
-| G3 | manifest 一致 | manifest 声明与实际文件一一对应 |
-| G4 | 画布合理 | 每个 slot 画布按该部件 8 方向最大包围盒定，无多余 1024px 空白 |
-
-### 5.4 大模型生成专项门禁
-
-| # | 检查项 | 通过标准 | 失败信号 |
-|---|--------|---------|---------|
-| A1 | character_keyframe 存在 | `keyframes/character_keyframe.png` 存在且 manifest 中 `characterKeyframe.hash` 匹配 | 缺 keyframe；keyframe 不是从基准方向 pose 抠出 |
-| A2 | CharacterLock 一致 | 所有批次 prompt 的 CharacterLock 段完全相同（一字不差） | 不同批次 prompt 出现描述差异 |
-| A3 | 跨部件角色一致 | 不同 slot 拼回的完整角色与 keyframe 特征相似度 ≥ 0.9 | 头长不像 keyframe 的头、躯干配色漂移 |
-| A4 | 无文本水印 | 图内无文字、无编号、无 watermark | OCR 检出 |
-
----
-
-## 6. 命名与文件组织
+### 3.7 怪物 Prompt 模板（monster_walk_S.png，参考 idle 第一帧）
 
 ```
-character_{id}/
-├── manifest.json
-├── keyframes/
-│   └── character_keyframe.png   ← 基准方向完整角色 pose 抠出，所有部件所有方向共享的角色参考
-└── parts/                       ← 每类部件一个子目录
-    ├── body/                    ← 整块身体（躯干+上臂+前臂+腿+靴），必出
-    │   ├── S.png   SE.png   E.png   NE.png   N.png   NW.png   W.png   SW.png
-    │   └── manifest.json        ← 本 slot 的 canvas、各挂点像素坐标
-    ├── head/                    ← 头（不含脖子），必出
-    │   └── ...
-    ├── weapon_R/                ← 主武器（不含手），必出
-    │   └── ...
-    ├── weapon_L/                ← 副手武器（不含手），可选
-    │   └── ...
-    ├── backpack/                ← 可选装饰层
-    │   └── ...
-    └── cape/                    ← 可选装饰层
-        └── ...
-```
-
-- 目录**保持最简**：只保留 manifest + keyframes + parts 三层。不生成 `sheets/`、`source/`、`preview/`、`qa/` 等冗余目录
-- `dir` 固定 8 值：S / SE / E / NE / N / NW / W / SW
-- 禁止任何方向缺失或复用其他方向文件
-
-**与已废弃范式对比**：
-```
-# 已废弃（帧动画）
-character_{id}/
-├── keyframes/character_keyframe.png
-└── sheets/
-    ├── {id}_walk_S_sheet.png     ← 8 帧横向条带
-    ├── {id}_walk_SE_sheet.png
-    └── ...
-
-# 本 Skill（身体分块，《闪克》式）
-character_{id}/
-├── keyframes/character_keyframe.png
-└── parts/
-    ├── body/S.png SE.png ...      ← 一整块身体
-    ├── head/S.png SE.png ...
-    ├── weapon_R/S.png SE.png ...
-    ├── weapon_L/S.png SE.png ...
-    └── backpack/S.png SE.png ...
+[CharacterLock —— 复用 monster_idle_S 的 CharacterLock 段，一字不改]
+[ViewLock —— 同上]
+[Layout —— 1 row × 8 columns of 512x512 cells]
+[CRITICAL —— 同上 + 以下新增]
+- THIS GENERATION USES monster_idle_S.png frame 1 as visual reference.
+- 8 frames walk animation, loopable. Front-left leg forward on frame 2, front-right leg forward on frame 6.
+- All 8 frames same foot baseline.
 ```
 
 ---
 
-## 7. 预期生成产物（完整描述）
+## 4. 脚本管线（`tools/build_sprites.py`）
 
-### 7.1 产物总览
-一次完整生成产出一套角色的 **8 方向身体分块资源包**：N 块部件 × 8 方向静态 PNG、manifest 清单、拼接自检结果。所有产物围绕同一个角色 ID 组织，目录结构固定。
+三种产出共用一套脚本，统一入口：
 
-### 7.2 manifest.json（最小模板）
+```bash
+# 角色身体（4 方向大图 → 裁剪出 48 张小图）
+python tools/build_sprites.py --mode character_body --in sprite_ani/bodies/ --out sprite_ani/bodies_cut/ --grid 512
+
+# 角色头（4 方向大图 → 裁剪出 4 张 head 小图）
+python tools/build_sprites.py --mode character_head --in sprite_ani/heads/{char_id}/ --out sprite_ani/heads/{char_id}/cut/ --grid 512
+
+# 装备（hat/cape/clothes/shoes/backpack = 4 方向大图；weapon/gloves = 1 张图）
+python tools/build_sprites.py --mode equipment --in sprite_ani/equipment/{eq_type}/ --out sprite_ani/equipment_cut/{eq_type}/ --grid 512
+
+# 怪物（一方向内 5 张大图 → 裁剪出全部帧）
+python tools/build_sprites.py --mode monster --in sprite_ani/monsters/{mon_id}/ --out sprite_ani/monsters/{mon_id}/cut/ --grid 512
+```
+
+脚本功能：
+1. 识别 `--mode`，读入 manifest 里的 `gridSize` 和布局参数
+2. 按网格裁出所有部件 / 帧，自动保存到规范目录
+3. 自动计算 `footBaselineY`（对 4 方向角色身体，找 calf_L / calf_R 的脚底 Y 作为该方向统一 baseline）
+4. 自动生成/更新 `manifest.json`（部件坐标、挂点、Z 层、帧列表）
+
+---
+
+## 5. 目录结构（强制）
+
+```
+sprite_ani/
+├── manifest.json                     ← 项目总清单（所有角色、装备、怪物索引）
+├── shared_bodies/                    ← 所有角色共享的身体部件（4 方向 × 12 块）
+│   ├── S_big.png                     ← S 方向大图（角色身体）
+│   ├── E_big.png                     ← E 方向大图
+│   ├── N_big.png
+│   ├── W_big.png
+│   └── cut/                          ← 脚本裁剪后的小图
+│       ├── S/  head.png neck.png torso_U.png torso_L.png ... (12 张)
+│       ├── E/  ...
+│       ├── N/  ...
+│       └── W/  ...
+│
+├── heads/                            ← 每个角色只需要生成 4 方向的头
+│   ├── engineer_spanner/
+│   │   ├── S_big.png E_big.png N_big.png W_big.png
+│   │   └── cut/  S.png E.png N.png W.png   (每方向 1 张)
+│   └── rust_hound_master/
+│       └── ...
+│
+├── equipment/                        ← 装备（全角色共用）
+│   ├── hat/engineer_helmet/
+│   │   ├── S_big.png E_big.png N_big.png W_big.png
+│   │   └── cut/ S.png E.png N.png W.png
+│   ├── cape/red_cape/
+│   ├── clothes/leather_coat/
+│   ├── shoes/steel_boots/
+│   ├── backpack/brass_gears/
+│   ├── gloves/work_gloves/           ← 共用 1 张图
+│   │   ├── big.png                   ← 一张图即成品，无方向
+│   │   └── cut/ single.png
+│   └── wrench/                       ← 共用 1 张图
+│       ├── big.png
+│       └── cut/ single.png
+│
+└── monsters/                         ← 怪物（帧动画）
+    └── rust_hound/
+        ├── S/                        ← S 方向 5 张大图
+        │   ├── idle.png walk.png attack.png hit.png death.png
+        │   └── cut/  idle/ 6帧 walk/ 8帧 attack/ 5帧 hit/ 3帧 death/ 6帧
+        ├── E/ ...
+        ├── N/ ...
+        └── W/ ...
+```
+
+---
+
+## 6. manifest.json（项目总清单最小模板）
+
 ```jsonc
 {
-  "characterId": "engineer_spanner",
-  "style": "don_t_starve_hand_drawn_steam_punk",
-  "characterKeyframe": {
-    "path": "keyframes/character_keyframe.png",
-    "hash": "sha256:abcd..."
+  "project": "dont_starve_steampunk",
+  "gridSize": 512,                     // 全项目统一网格
+  "directions": ["S", "E", "N", "W"],  // 4 方向顺序
+  "sharedBodies": {
+    "path": "shared_bodies/cut",
+    "footBaselineByDirection": { "S": 2860, "E": 2858, "N": 2862, "W": 2860 },
+    "zOrderByDirection": { ... }       // 见第 1.6 节
   },
-  "directions": ["S","SE","E","NE","N","NW","W","SW"],
-  "footBaselineY": 950,
-  "colorMode": "sRGB",
-  "antialias": true,
-  "zOrder": [
-    "backpack", "cape",           // 最下层，先画
-    "body",                       // 中间层
-    "weapon_L", "weapon_R",       // 盖在手上
-    "head"                        // 最上层，后画
-  ],
-  "parts": {
-    "body": {
-      "canvas": { "w": 768, "h": 1024 },
-      "anchors": {                              // body 自己的挂点，全 8 方向强制一致
-        "foot_anchor":   { "x": 384, "y": 1000 },  // 引擎世界锚点（脚底中心）
-        "neck_anchor":   { "x": 384, "y": 680  },  // 头挂点
-        "hand_R_anchor": { "x": 560, "y": 780  },  // 主武器挂点
-        "hand_L_anchor": { "x": 208, "y": 780  },  // 副手武器挂点
-        "back_anchor":   { "x": 384, "y": 520  }   // cape / backpack 挂点
-      },
-      "cutBoundary": "neck top + 2 hand grips only; no joint cuts",
-      "replaceable": false,
-      "bones": [                                 // 引擎骨架定义（每根 bone = anchor + rotation pivot）
-        { "name": "spine",  "anchor": "foot_anchor", "pivot": "foot_anchor" },
-        { "name": "neck",   "anchor": "neck_anchor", "pivot": "neck_anchor" },
-        { "name": "arm_R",  "anchor": "hand_R_anchor", "pivot": { "x": 500, "y": 700 } },
-        { "name": "arm_L",  "anchor": "hand_L_anchor", "pivot": { "x": 268, "y": 700 } }
-      ]
-    },
-    "head": {
-      "canvas": { "w": 480, "h": 480 },
-      "anchors": {
-        "neck_anchor": { "x": 240, "y": 440 }        // 与 body.neck_anchor 对齐
-      },
-      "cutBoundary": "lower edge at neck top; no neck drawn",
-      "replaceable": true
-    },
-    "weapon_R": {
-      "canvas": { "w": 384, "h": 384 },
-      "anchors": {
-        "hilt_anchor": { "x": 60, "y": 340 }         // 与 body.hand_R_anchor 对齐
-      },
-      "cutBoundary": "weapon only; NO hand, NO arm",
-      "replaceable": true,
-      "weaponClass": "wrench"
-    },
-    "weapon_L": {
-      "canvas": { "w": 384, "h": 384 },
-      "anchors": {
-        "hilt_anchor": { "x": 60, "y": 340 }         // 与 body.hand_L_anchor 对齐
-      },
-      "replaceable": true,
-      "weaponClass": "watering_can"
-    },
-    "backpack": {
-      "canvas": { "w": 320, "h": 320 },
-      "anchors": {
-        "top_anchor": { "x": 160, "y": 40 }          // 与 body.back_anchor 对齐
-      },
-      "replaceable": true
+  "characters": [
+    {
+      "id": "engineer_spanner",
+      "headPath": "heads/engineer_spanner/cut",
+      "bodyRef": "sharedBodies",
+      "equipment": { "hat": null, "gloves": "work_gloves", "weapon": "wrench", "backpack": "brass_gears" }
     }
-    // cape 可选，结构与 backpack 相同
-  }
+  ],
+  "equipment": [
+    {
+      "id": "wrench",
+      "slot": "weapon",
+      "sharedImage": true,             // 只有一张图，无方向
+      "path": "equipment/wrench/cut/single.png"
+    },
+    {
+      "id": "engineer_helmet",
+      "slot": "hat",
+      "sharedImage": false,
+      "pathByDirection": { "S": ".../S.png", "E": ".../E.png", "N": ".../N.png", "W": ".../W.png" }
+    }
+  ],
+  "monsters": [
+    {
+      "id": "rust_hound",
+      "path": "monsters/rust_hound/cut",
+      "footBaselineByDirection": { "S": 410, "E": 412, "N": 410, "W": 410 },
+      "actions": {
+        "idle":   { "frames": 6, "fps": 8, "loop": true  },
+        "walk":   { "frames": 8, "fps": 14, "loop": true  },
+        "attack": { "frames": 5, "fps": 16, "loop": false },
+        "hit":    { "frames": 3, "fps": 20, "loop": false },
+        "death":  { "frames": 6, "fps": 10, "loop": false }
+      }
+    }
+  ]
 }
 ```
 
-### 7.3 拼接自检产物（CSV 示例）
+---
 
-| part | dir | anchor 一致 | 画布合理 | 无镜像复用 | 拼接轮廓 SSIM | 检查结论 |
-|------|-----|------------|---------|----------|--------------|---------|
-| head | S   | ✓          | ✓       | ✓        | 0.96         | 通过    |
-| head | SE  | ✓          | ✓       | ✓        | 0.94         | 通过    |
-| ...  | ... | ...        | ...     | ...      | ...          | ...     |
+## 7. 质量门禁（QA Gate）
 
-- 拼接自检是 8 方向高质量交付的**验收凭证**，缺失即视为交付不完整
-
-### 7.4 产物验收标准（必须同时满足）
-1. 所有声明 slot 在 8 方向目录齐全，无缺失、无复用、无旋转生成、无镜像
-2. 同一 slot 的 anchor 8 方向像素坐标一致
-3. 拼接成完整角色后，跨方向切换对齐稳定
-4. 斜向方向透视正确，不对称元素朝向正确
-5. manifest 与实际文件完全对应
-6. 拼接自检 CSV 填写完整
-
-### 7.5 产物边界说明（非此即打回）
-本 Skill **不产出**：
-- 任何帧图、任何动画条带、任何 action 目录
-- 多方向之外的翻转复用版本
-- 旋转生成的中间图
-- 未在部件清单声明的 slot
+| # | 类型 | 检查项 | 通过标准 |
+|---|------|--------|---------|
+| Q1 | 对齐 | 同一方向大图所有部件脚 baseline Y 差 ≤ 2px | 裁剪后所有部件叠到一起脚不飘 |
+| Q2 | 对齐 | 怪物同一方向 5 张大图脚 baseline 一致 | 攻击时怪不往上跳 |
+| Q3 | 对齐 | 装备 4 方向挂载点与角色身体挂点差 ≤ 2px | 帽子不飘、武器不入手 |
+| Q4 | 模型 | 前一方向 → 后一方向的参考链完整 | E 一定参考 S、N 一定参考 E |
+| Q5 | 模型 | 怪物零部件 ≤ 5 个 | 复杂度清单通过 |
+| Q6 | 模型 | 角色脖子/四肢是 Don't Starve 线状物（细杆+关节球） | 无厚肉块 |
+| Q7 | 模型 | 躯干 4 方向都合理（等距投影，不是正面/侧面轮廓） | 从 E/W 方向看 torso_U 不至于完全变形 |
+| Q8 | 网格 | 所有大图 `width % gridSize === 0 && height % gridSize === 0` | 脚被裁一半 |
+| Q9 | 网格 | 所有部件/帧图尺寸精确 = gridSize | 脚本裁剪无偏差 |
+| Q10 | 透明 | 裁剪后透明区无黑边、无纯白棋盘格残留 | 无白边 |
+| Q11 | 跨方向 | 跨方向怪物 idle 第 1 帧 SSIM ≥ 0.80 | S 和 E 的猎犬长得不像同一只 |
+| Q12 | 文字 | 图内无编号、无文字、无 watermark | OCR 检出 → 重绘 |
+| Q13 | 对称 | 角色身体左/上臂（及大腿/小腿）不对称元素（武器手侧）方向变化合理 | 持武器手在 S/SE/E 都在画面同一侧 |
+| Q14 | 装备 | 衣服装备的裁剪能**替换** torso_U + torso_L 区域 | 不遮挡 head/neck/limbs |
+| Q15 | 怪物 | 怪物一方向内 5 张大图完整产出，无缺失动作 | — |
+| Q16 | 怪物 | 怪物 attack 帧包含命中帧（通常第 3 帧） | 无攻击前摇后没出招 |
 
 ---
 
-## 8. 交付物清单
+## 8. 反模式（打回规则）
 
-| # | 交付物 | 必交/可选 | 说明 |
-|---|--------|----------|------|
-| 1 | 每 slot 8 方向 PNG | 必交 | `parts/{slot}/{dir}.png` |
-| 2 | manifest.json | 必交 | 第 7.2 节模板 |
-| 3 | 拼接自检 CSV | 必交 | 第 7.3 节格式 |
-| 4 | 源文件（PSD/Aseprite/工程） | 可选 | 保留分层信息 |
-
----
-
-## 9. 反模式清单（打回规则）
-
-| # | 反模式 | 根因 | 处置 |
-|---|--------|------|------|
-| R1 | 旋转生成斜向部件 | 斜向由正方向旋转 45° 得来 | 直接打回，逐方向独立重绘 |
-| R2 | 镜像复用左右方向 | W = 水平翻转 E；NW = 翻转 NE | 直接打回，独立重绘 |
-| R3 | 斜向复用水平/垂直方向 | SE 复用 E 或 S | 直接打回，独立重绘 |
-| R4 | anchor 跨方向不一致 | 方向切换时部件上下跳 | 打回重做该 slot |
-| R5 | body 切到关节 | body 把肩膀也画成了独立块、或在膝/肘切了 | 重画 body，整身拼齐 |
-| R6 | 一个 slot 夹带其他 slot 内容 | 生成 head 时夹带脖子、生成 weapon 时夹带手 | 重绘该部件 |
-| R7 | 画布过大浪费 | 小部件用 1024×1024 图 | 重定画布 |
-| R8 | 跨批次 CharacterLock prompt 不一致 | 不同部件用了不同版本的角色描述词 | 锁定 CharacterLock，重做 |
+| # | 反模式 | 处置 |
+|---|--------|------|
+| R1 | 方向顺序打乱（先 E 再 S） | 按 S→E→N→W 重走参考链 |
+| R2 | 生成后一方向时未传前一方向参考图 | 退回，补上参考 |
+| R3 | 怪物在同一方向里跳过某动作生成下一个方向 | 退回，补齐动作 |
+| R4 | 怪物零部件 > 5 个 | 简化，重画 |
+| R5 | 脖子/四肢是厚肉块 | 退回，改成细杆 + 关节球 |
+| R6 | 部件在网格里偏置（没居中） | 模型重画 |
+| R7 | 大图网格非正方形或网格尺寸不一致 | 重画 |
+| R8 | 脚 baseline 跨部件不一致 | 重画该方向大图 |
+| R9 | 模型加了编号/文字/水印 | 重画，Prompt 里加强禁止词 |
+| R10 | 躯干 4 方向看某一方向完全变形 | 重画，加强 isometric projection 描述 |
+| R11 | 武器/手套也生成了 4 方向 | 退回，武器手套只用 1 张共用图 |
+| R12 | 新角色生成了身体部件 | 退回，新角色只需要 head 4 方向 |
 
 ---
 
-## 10. 管线自动化检查建议
+## 9. 与引擎侧的接口约定（写进代码常量）
 
-以下门禁项可转为**脚本化自动检查**：
+```typescript
+// 角色身体 slot 名
+export const BODY_SLOTS = [
+  'head', 'neck',
+  'torso_U', 'torso_L',
+  'upper_arm_L', 'upper_arm_R',
+  'forearm_L', 'forearm_R',
+  'thigh_L', 'thigh_R',
+  'calf_L', 'calf_R',
+] as const;
 
-| 脚本可检项 | 方法 |
-|-----------|------|
-| anchor 全方向一致 | PIL 读取各 slot 的 manifest.json `anchor` 字段 diff |
-| 命名正则 | 正则 `^parts/{slot}/(S|SE|E|NE|N|NW|W|SW)\.png$` |
-| manifest ↔ 文件 | glob 文件列表 vs manifest.parts 差集 |
-| 无镜像复用 | 对称方向部件与其水平翻转的 MSE 应明显高于两个独立方向间的 MSE |
-| 无旋转生成 | 单应性匹配 + 边缘锯齿检测 |
-| 透明无黑边 | 检查 alpha<255 区域的 RGB 是否接近黑色 |
-| 拼接轮廓 SSIM | PIL 按 Z 顺序粘贴后，与 character_keyframe 计算 SSIM |
-| 跨部件风格一致 | 描边粗细 / 主色 k-means 聚类一致度 |
+// 方向顺序（生成与逻辑共用）
+export const DIRECTION_ORDER = ['S', 'E', 'N', 'W'] as const;
 
----
+// 装备 slot 名
+export const EQUIPMENT_SLOTS = ['hat', 'cape', 'clothes', 'shoes', 'backpack', 'gloves', 'weapon'] as const;
+export const EQUIPMENT_SHARED = new Set(['gloves', 'weapon']); // 无方向共用图
 
-## 11. 使用方式
+// 怪物动作顺序
+export const MONSTER_ACTION_ORDER = ['idle', 'walk', 'attack', 'hit', 'death'] as const;
+```
 
-- **Agent Skill**：第 2–3 节填表，第 4–5 节生成与校验，第 9 节打回规则
-- **外包需求书**：第 2–3 节填表 + 第 5 节门禁 + 第 7–8 节产物与交付物直接发美术
-- **管线脚本**：第 5 节门禁 + 第 10 节建议转自动化
-- **代码审查基线**：任何 sprite 相关 PR 必须附拼接自检 CSV（第 7.3 节）作为验收凭证
-- **与已废弃帧动画的关系**：已废弃的 `build_atlas.py`、帧条带、帧率、循环、首尾连续等全部不再使用。引擎侧改用 `CharacterAssembler` 组件，在运行时按 Z 顺序把部件贴到一起
+角色/装备/怪物 三种渲染组件在引擎里的结构（伪代码）：
+```ts
+type Character = {
+  head: { dir: DirKey, texture: THREE.Texture }        // 角色独有
+  body: Record<DirKey, Record<BodySlot, THREE.Texture>> // 来自 shared_bodies
+  equipment: Partial<Record<EquipmentSlot, { dir?: DirKey, texture: THREE.Texture }>>
+  zOrder: Record<DirKey, BodySlot[]>
+  footBaselineY: Record<DirKey, number>
+}
 
----
-
-## 12. 何时回到帧动画（极少数特例）
-
-只有两类东西**必须用帧动画**、不适合身体分块：
-1. **整角色特效**：整个角色爆炸、传送门消失、被抓进箱子——此时部件概念不适用
-2. **粒子发射器挂点**：虽然粒子是独立系统，但挂在哪个身体部位上需要在代码里用 slot 名字绑定（与本 Skill 的 slot 命名一致）
-
-这两类属于 FX 范畴，单独交付，不替换身体分块主流程。
+type Monster = {
+  id: string
+  dirFrames: Record<DirKey, Record<ActionKey, THREE.Texture[]>> // 4 方向 × 5 动作 × N 帧
+  actionLoop: Partial<Record<ActionKey, boolean>>
+  footBaselineY: Record<DirKey, number>
+}
+```
