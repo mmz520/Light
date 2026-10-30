@@ -46,33 +46,84 @@ description: "8-direction high-quality character body-part sprite generation spe
 
 ---
 
-## 2. 身体分块清单（模板）
+## 2. 身体分块清单（《闪克》式粗粒度模板）
+
+### 2.1 设计理念（先理解再拆）
+
+《闪克》(Shank, Klei Entertainment 2010) 的分块思路是**把角色从逐关节的 14+ 块，浓缩成 4–5 块粗粒度部件**：
+
+| 《闪克》做法 | 为什么这样拆 |
+|-------------|------------|
+| 身体是**一整块 `body`**（躯干 + 上臂 + 前臂 + 腿 + 脚全部拼在一起） | 动作/走路由引擎里的骨架 + IK 驱动手和腿的位置偏移，**不是画多帧**，所以身体不需要逐关节切 |
+| 头是独立块 `head` | Shank 可以让头单独做 8 方向旋转（身体不换），引擎切换头图即可；换发型/护目镜也只换头 |
+| 武器是独立块 `weapon_R / weapon_L`，**不含手** | 武器挂在 `body` 上的 `hand_R_anchor` / `hand_L_anchor`，手由 `body` 自己提供；Shank 核心卖点——3 把武器随时切换（弯刀/电锯/手枪）就是换一张 weapon 图 |
+| 披风/背包是可选 DLC 层 | `cape / backpack` 挂在背部，有独立物理（风吹、跳跃飘动） |
+
+**为什么选这个范式**：比逐关节切少 70% 部件，引擎骨架 + IK 已能覆盖 idle/walk/run/attack/hit/death 全部动作，换武器换头成本趋近于零。代价是引擎必须实现一个轻量的 2D 骨架（每根 bone 1 个 anchor + rotation）。
+
+### 2.2 分块清单（强制 4–5 块 + 可选装饰层）
 
 每个角色先填下面这张表，**确认分块后再进入生成**。字段 `slot` 是引擎挂点名，与代码常量一致：
 
-| slot | 名称 | 典型内容 | 可独立替换 |
-|------|------|---------|----------|
-| `head` | 头 | 脸型、头发、眼镜、护目镜、头盔 | 发型/护目镜单独换 |
-| `torso` | 躯干 | 夹克、工装、护甲主体 | 不独立换 |
-| `upper_arm_L` | 左上臂 | 上臂 + 肩甲 | 不独立换 |
-| `upper_arm_R` | 右上臂 | 上臂 + 肩甲 + **武器挂点** | 不独立换 |
-| `forearm_L` | 左前臂 | 前臂 + 手套 | 不独立换 |
-| `forearm_R` | 右前臂 | 前臂 + 手套 | 不独立换 |
-| `weapon_R` | 右手武器 | 扳手 / 镐 / 枪 | ✅ 武器可换 |
-| `weapon_L` | 左手武器 |  watering can / 盾 | ✅ 副手武器可换 |
-| `hip_pack_L` | 左胯包 | 工具袋 | ✅ |
-| `hip_pack_R` | 右胯包 | 不装东西时为空 | ✅ |
-| `back_gear` | 背部装置 | 黄铜齿轮 + 铜管 | ✅ |
-| `leg_L` | 左腿 | 裤腿 + 靴子 | 不独立换 |
-| `leg_R` | 右腿 | 裤腿 + 靴子 | 不独立换 |
-| `cape` | 披风（可选） | 披风本体 | ✅ |
+#### 基础块（每角色必出，不可缺）
 
-**可独立替换部件**（`weapon_R / weapon_L / cape / back_gear / hip_pack_*`）在后续扩展时可单独增删，不影响角色主体。
+| slot | 名称 | 典型内容 | 内含挂点 | 可独立替换 |
+|------|------|---------|---------|----------|
+| `body` | 身体（整块） | 夹克 + 工装 + 上臂 + 前臂 + 腿 + 靴子 **全部**拼在一起 | `hand_L_anchor / hand_R_anchor / neck_anchor / foot_anchor` | ❌ 整身换 |
+| `head` | 头 | 脸型、头发、护目镜、**不含脖子** | `neck_anchor`（与 body 的 neck_anchor 对齐） | ✅ 发型/护目镜单独换 |
 
-**分块原则**：
-- 边界在关节处（肩、肘、髋、膝），避免切到中间造成拼缝。
-- 上层（头、上躯干、武器）遮挡下层（腿、前臂、胯包），Z 顺序固定：`back_gear → cape → leg → torso → hip_pack → forearm → upper_arm → weapon → head`。
-- 每块图 **自身就是完整的独立精灵**，无需依赖其他块的透明区域即可单独预览。
+#### 武器块（每角色按职业出，1–4 把）
+
+| slot | 名称 | 典型内容 | 内含挂点 | 可独立替换 |
+|------|------|---------|---------|----------|
+| `weapon_R` | 主武器（右手） | 扳手 / 弯刀 / 电锯 / 枪 **仅画武器本身**，不含手/臂 | `hilt_anchor`（与 body 的 `hand_R_anchor` 对齐） | ✅ 随意换 |
+| `weapon_L` | 副手武器（左手，可选） |  watering can / 盾 / 短匕首 | `hilt_anchor`（与 body 的 `hand_L_anchor` 对齐） | ✅ 随意换 |
+
+#### 装饰块（可选 DLC 层，0–3 层）
+
+| slot | 名称 | 典型内容 | 内含挂点 | 可独立替换 |
+|------|------|---------|---------|----------|
+| `cape` | 披风 | 披风本体，不含肩 | `top_anchor`（与 body 背部挂点对齐） | ✅ |
+| `backpack` | 背包/背饰 | 黄铜齿轮 + 铜管 / 背包 | `top_anchor` | ✅ |
+| `hip_bag_L` | 左胯包 | 工具袋 | `hip_anchor` | ✅ |
+
+### 2.3 分块原则（强制）
+
+1. **`body` 画成一整块完整角色图**——包含躯干、两条上臂、两条前臂、两条腿、两只靴子，边界只在 **脖子顶端**（上面交给 `head`）和 **双手武器挂点**（武器的 hilt 接在这里）。严禁在肩/肘/髋/膝切关节。
+2. **`head` 不含脖子**——脖子属于 `body`（否则头换上去会飘）。`head` 图的 `neck_anchor` 必须精确落在脖子顶端中心。
+3. **武器块不含手**——武器图的 `hilt_anchor` 必须画在握柄中心（引擎把它贴到 `body` 的手挂点）。画武器时不要画手、不要画手臂残段、不要画"握着手套"的样子。
+4. **每块图自身就是完整独立精灵**——PIL 单独预览不透明区域，无需依赖其他块的透明区即可看清边界。
+5. **Z 顺序固定**（后面的盖前面的）：`backpack → cape → body → weapon_L → weapon_R → head`。`body` 是中间层，武器盖在手上，头盖在脖子上。
+
+### 2.4 挂点规范
+
+每个 slot 必须在 manifest 里声明自身的挂点像素坐标（相对该 slot 自己的画布，原点在左上）：
+
+| 挂点 | 属于哪个 slot | 作用 |
+|------|--------------|------|
+| `body.foot_anchor` | body | 脚底中心，**引擎世界锚点** |
+| `body.neck_anchor` | body | 脖子顶端中心，头挂这里 |
+| `body.hand_L_anchor` | body | 左手掌中心，副手武器挂这里 |
+| `body.hand_R_anchor` | body | 右手掌中心，主武器挂这里 |
+| `body.back_anchor` | body | 背部中心，cape / backpack 挂这里 |
+| `head.neck_anchor` | head | 脖子中心（与 body.neck_anchor 对齐） |
+| `weapon_R.hilt_anchor` | weapon_R | 武器握柄中心（与 body.hand_R_anchor 对齐） |
+| `weapon_L.hilt_anchor` | weapon_L | 武器握柄中心（与 body.hand_L_anchor 对齐） |
+
+**全方向强制一致**：同一个 slot 的挂点坐标 8 方向完全相同（否则方向切换时头/武器会抖）。
+
+### 2.5 本项目默认分块实例
+
+> 工程师角色的配置（示例，不是固定值）：
+>
+> | slot | 内容 | 挂点数 |
+> |------|------|-------|
+> | `body` | 棕色皮夹克 + 深蓝工装 + 上臂前臂 + 右腿左腿 + 棕靴 + 左胯工具袋 | 5（foot / neck / hand_L / hand_R / back） |
+> | `head` | 棕色刺头 + 护目镜 + 大圆眼镜 + 钩鼻 + 胡茬 | 1（neck） |
+> | `weapon_R` | 金属开口扳手（无手） | 1（hilt） |
+> | `weapon_L` | 黄铜洒水壶（无手） | 1（hilt） |
+> | `backpack` | 黄铜齿轮 + 铜管 | 1（top） |
+> | — | `hip_bag_L` 已合并进 body（本项目作为衣服装饰，不单独换） | — |
 
 ---
 
@@ -94,9 +145,9 @@ description: "8-direction high-quality character body-part sprite generation spe
 
 ### 3.3 画布与技术规格
 - 每块部件**单独定画布**：按该部件所有方向的最大包围盒 + 安全边距（2–4 px）确定，不同 slot 画布可以不同
-- 每个 slot 自己的挂点（anchor）：部件被挂到哪个位置（例如 `torso` 挂在脚底中心 `(0, footY)`，`head` 挂在 `torso` 顶部中心）
+- 每个 slot 自己的挂点（anchor）：部件被挂到哪个位置（例如 `body` 图自带 `foot_anchor` 作为引擎世界锚点，`head.neck_anchor` 必须与 `body.neck_anchor` 精确对齐）
 - 挂点坐标：每个 slot 的 anchor **全方向必须一致**（否则部件在方向切换时会跳）
-- 脚底基准线 Y：`leg` 部件锚点，其他部件相对它定位
+- 脚底基准线 Y：`body.foot_anchor`，其他部件挂点相对它定位
 - 透明通道：必须
 - 交付格式：PNG（单张静态图）+ manifest.json
 - 过滤方式：像素风 Point/Nearest，手绘风按项目
@@ -163,7 +214,7 @@ CRITICAL RULES — READ FIRST:
 Part: head
 Contents: spiky messy dark brown hair, brass aviator goggles on forehead, large round glasses, big hooked nose, stubble beard.
 Cut boundary: upper edge above top hair, lower edge at neck joint (just below beard).
-Anchor point at neck center (the point where head attaches to torso).
+Anchor point at neck center (the point where head attaches to body.neck_anchor).
 Facing Southeast means the face is in three-quarter view, nose and beard pointing toward the lower-right.
 ```
 
@@ -176,7 +227,7 @@ Facing Southeast means the face is in three-quarter view, nose and beard pointin
 - 每完成一个方向做方向一致性检查：比例、描边粗细、anchor 位置、不对称元素朝向
 
 ### Step 4：部件拼接自检
-- PIL 把 `torso + head + arms + legs + weapon` 按 Z 顺序拼到一起
+- PIL 把 `backpack + cape + body + weapon_L + weapon_R + head` 按 Z 顺序拼到一起
 - 拼完后与 character_keyframe 比较轮廓 SSIM（≥ 0.90 通过）
 - 拼缝处无明显错位、无白边、无上下飘
 - 跨方向切换时部件对齐稳定，不跳变
@@ -209,7 +260,7 @@ Facing Southeast means the face is in three-quarter view, nose and beard pointin
 | # | 检查项 | 通过标准 |
 |---|--------|---------|
 | P1 | 边界在关节处 | 部件切分不穿透肌肉/骨骼，关节处留白 2–3 px 避免拼缝 |
-| P2 | 上层遮挡关系正确 | `back_gear` 在最下、`weapon/head` 在最上，Z 顺序符合第 2 节模板 |
+| P2 | 上层遮挡关系正确 | `backpack → cape → body → weapon_L → weapon_R → head`，Z 顺序符合第 2.3 节模板 |
 | P3 | 单部件无多余内容 | 生成 head 时只有头，不夹带躯干/武器 |
 | P4 | 单部件无缺漏 | 所有声明 slot 在 8 方向都有文件 |
 | P5 | 跨 slot 风格一致 | 描边粗细、配色、cel shading 风格一致 |
@@ -243,16 +294,19 @@ character_{id}/
 ├── keyframes/
 │   └── character_keyframe.png   ← 基准方向完整角色 pose 抠出，所有部件所有方向共享的角色参考
 └── parts/                       ← 每类部件一个子目录
-    ├── head/
+    ├── body/                    ← 整块身体（躯干+上臂+前臂+腿+靴），必出
     │   ├── S.png   SE.png   E.png   NE.png   N.png   NW.png   W.png   SW.png
-    │   └── manifest.json        ← 本 slot 的 canvas、anchor、Z 顺序
-    ├── torso/
+    │   └── manifest.json        ← 本 slot 的 canvas、各挂点像素坐标
+    ├── head/                    ← 头（不含脖子），必出
     │   └── ...
-    ├── upper_arm_R/
+    ├── weapon_R/                ← 主武器（不含手），必出
     │   └── ...
-    ├── weapon_R/
+    ├── weapon_L/                ← 副手武器（不含手），可选
     │   └── ...
-    └── ...
+    ├── backpack/                ← 可选装饰层
+    │   └── ...
+    └── cape/                    ← 可选装饰层
+        └── ...
 ```
 
 - 目录**保持最简**：只保留 manifest + keyframes + parts 三层。不生成 `sheets/`、`source/`、`preview/`、`qa/` 等冗余目录
@@ -269,13 +323,15 @@ character_{id}/
     ├── {id}_walk_SE_sheet.png
     └── ...
 
-# 本 Skill（身体分块）
+# 本 Skill（身体分块，《闪克》式）
 character_{id}/
 ├── keyframes/character_keyframe.png
 └── parts/
+    ├── body/S.png SE.png ...      ← 一整块身体
     ├── head/S.png SE.png ...
-    ├── torso/S.png SE.png ...
-    └── weapon_R/S.png SE.png ...
+    ├── weapon_R/S.png SE.png ...
+    ├── weapon_L/S.png SE.png ...
+    └── backpack/S.png SE.png ...
 ```
 
 ---
@@ -299,29 +355,63 @@ character_{id}/
   "colorMode": "sRGB",
   "antialias": true,
   "zOrder": [
-    "back_gear", "cape",
-    "leg_L", "leg_R",
-    "torso",
-    "hip_pack_L", "hip_pack_R",
-    "forearm_L", "forearm_R",
-    "upper_arm_L", "upper_arm_R",
-    "weapon_L", "weapon_R",
-    "head"
+    "backpack", "cape",           // 最下层，先画
+    "body",                       // 中间层
+    "weapon_L", "weapon_R",       // 盖在手上
+    "head"                        // 最上层，后画
   ],
   "parts": {
+    "body": {
+      "canvas": { "w": 768, "h": 1024 },
+      "anchors": {                              // body 自己的挂点，全 8 方向强制一致
+        "foot_anchor":   { "x": 384, "y": 1000 },  // 引擎世界锚点（脚底中心）
+        "neck_anchor":   { "x": 384, "y": 680  },  // 头挂点
+        "hand_R_anchor": { "x": 560, "y": 780  },  // 主武器挂点
+        "hand_L_anchor": { "x": 208, "y": 780  },  // 副手武器挂点
+        "back_anchor":   { "x": 384, "y": 520  }   // cape / backpack 挂点
+      },
+      "cutBoundary": "neck top + 2 hand grips only; no joint cuts",
+      "replaceable": false,
+      "bones": [                                 // 引擎骨架定义（每根 bone = anchor + rotation pivot）
+        { "name": "spine",  "anchor": "foot_anchor", "pivot": "foot_anchor" },
+        { "name": "neck",   "anchor": "neck_anchor", "pivot": "neck_anchor" },
+        { "name": "arm_R",  "anchor": "hand_R_anchor", "pivot": { "x": 500, "y": 700 } },
+        { "name": "arm_L",  "anchor": "hand_L_anchor", "pivot": { "x": 268, "y": 700 } }
+      ]
+    },
     "head": {
-      "canvas": { "w": 512, "h": 512 },
-      "anchor": { "x": 256, "y": 480 },   // 挂在脖子中心，相对该部件画布
-      "cutBoundary": "neck joint",
-      "replaceable": false
+      "canvas": { "w": 480, "h": 480 },
+      "anchors": {
+        "neck_anchor": { "x": 240, "y": 440 }        // 与 body.neck_anchor 对齐
+      },
+      "cutBoundary": "lower edge at neck top; no neck drawn",
+      "replaceable": true
     },
     "weapon_R": {
       "canvas": { "w": 384, "h": 384 },
-      "anchor": { "x": 60, "y": 340 },    // 挂在右上臂挂点
+      "anchors": {
+        "hilt_anchor": { "x": 60, "y": 340 }         // 与 body.hand_R_anchor 对齐
+      },
+      "cutBoundary": "weapon only; NO hand, NO arm",
       "replaceable": true,
-      "slot": "weapon"
+      "weaponClass": "wrench"
+    },
+    "weapon_L": {
+      "canvas": { "w": 384, "h": 384 },
+      "anchors": {
+        "hilt_anchor": { "x": 60, "y": 340 }         // 与 body.hand_L_anchor 对齐
+      },
+      "replaceable": true,
+      "weaponClass": "watering_can"
+    },
+    "backpack": {
+      "canvas": { "w": 320, "h": 320 },
+      "anchors": {
+        "top_anchor": { "x": 160, "y": 40 }          // 与 body.back_anchor 对齐
+      },
+      "replaceable": true
     }
-    // ... 其他 part
+    // cape 可选，结构与 backpack 相同
   }
 }
 ```
@@ -372,8 +462,8 @@ character_{id}/
 | R2 | 镜像复用左右方向 | W = 水平翻转 E；NW = 翻转 NE | 直接打回，独立重绘 |
 | R3 | 斜向复用水平/垂直方向 | SE 复用 E 或 S | 直接打回，独立重绘 |
 | R4 | anchor 跨方向不一致 | 方向切换时部件上下跳 | 打回重做该 slot |
-| R5 | 部件边界穿透关节 | head 把肩膀也画进来、forearm 包含上臂 | 重新切分 |
-| R6 | 一个 slot 夹带其他 slot 内容 | 生成 head 时夹带 torso | 重绘该部件 |
+| R5 | body 切到关节 | body 把肩膀也画成了独立块、或在膝/肘切了 | 重画 body，整身拼齐 |
+| R6 | 一个 slot 夹带其他 slot 内容 | 生成 head 时夹带脖子、生成 weapon 时夹带手 | 重绘该部件 |
 | R7 | 画布过大浪费 | 小部件用 1024×1024 图 | 重定画布 |
 | R8 | 跨批次 CharacterLock prompt 不一致 | 不同部件用了不同版本的角色描述词 | 锁定 CharacterLock，重做 |
 
