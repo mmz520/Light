@@ -73,7 +73,7 @@
      "size": 2,
      "layout": {
       "x": 0,
-      "y": 0.375,
+      "y": 0.3203125,
       "h": 0.4296875
      },
      "defaultPose": {
@@ -112,7 +112,7 @@
      "texturePath": "assets/sprites/role/common/arm.png",
      "size": 2,
      "layout": {
-      "x": -0.2265625,
+      "x": -0.1484375,
       "y": -0.080078125,
       "h": 0.29296875
      },
@@ -172,7 +172,7 @@
      "texturePath": "assets/sprites/role/common/arm.png",
      "size": 2,
      "layout": {
-      "x": 0.2265625,
+      "x": 0.1484375,
       "y": -0.080078125,
       "h": 0.29296875
      },
@@ -4004,7 +4004,7 @@
      "size": 2,
      "layout": {
       "x": 0,
-      "y": 0.375,
+      "y": 0.3203125,
       "h": 0.4296875
      },
      "defaultPose": {
@@ -4043,7 +4043,7 @@
      "texturePath": "assets/sprites/role/common/arm.png",
      "size": 2,
      "layout": {
-      "x": -0.2265625,
+      "x": -0.1484375,
       "y": -0.080078125,
       "h": 0.29296875
      },
@@ -4103,7 +4103,7 @@
      "texturePath": "assets/sprites/role/common/arm.png",
      "size": 2,
      "layout": {
-      "x": 0.2265625,
+      "x": 0.1484375,
       "y": -0.080078125,
       "h": 0.29296875
      },
@@ -7935,7 +7935,7 @@
      "size": 2,
      "layout": {
       "x": 0,
-      "y": 0.375,
+      "y": 0.3203125,
       "h": 0.4296875
      },
      "defaultPose": {
@@ -7974,7 +7974,7 @@
      "texturePath": "assets/sprites/role/common/arm.png",
      "size": 2,
      "layout": {
-      "x": -0.2265625,
+      "x": -0.1484375,
       "y": -0.080078125,
       "h": 0.29296875
      },
@@ -8034,7 +8034,7 @@
      "texturePath": "assets/sprites/role/common/arm.png",
      "size": 2,
      "layout": {
-      "x": 0.2265625,
+      "x": 0.1484375,
       "y": -0.080078125,
       "h": 0.29296875
      },
@@ -11866,7 +11866,7 @@
      "size": 2,
      "layout": {
       "x": 0,
-      "y": 0.375,
+      "y": 0.3203125,
       "h": 0.4296875
      },
      "defaultPose": {
@@ -11905,7 +11905,7 @@
      "texturePath": "assets/sprites/role/common/arm.png",
      "size": 2,
      "layout": {
-      "x": -0.2265625,
+      "x": -0.1484375,
       "y": -0.080078125,
       "h": 0.29296875
      },
@@ -11965,7 +11965,7 @@
      "texturePath": "assets/sprites/role/common/arm.png",
      "size": 2,
      "layout": {
-      "x": 0.2265625,
+      "x": 0.1484375,
       "y": -0.080078125,
       "h": 0.29296875
      },

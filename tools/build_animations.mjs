@@ -2,8 +2,9 @@
 /**
  * 生成工程师（火柴棒骨架）四方向动画数据
  *
- * 数据来源：编辑器实际初始骨架（window.__animator.project.directions[dir].parts），
- * 保证 parts / layout 与运行时完全一致；骨架数值改了就重跑本脚本。
+ * 数据来源：public/assets/sprites/manifest.json（build_sprites.py 产出）。
+ * 骨架换算与编辑器 AnimatorStudio.makeSkeleton 完全一致；
+ * layout 或 zOrder 改了，先跑 build_sprites.py，再跑本脚本。
  *
  * 输出：public/animations/engineer_spanner_anim.json
  *
@@ -12,31 +13,90 @@
  *   为了让肢体看起来绕关节（肩/肘/髋/膝）转，rot 之外再叠加 pivotComp 位移补偿：
  *   设部件高 h、绕顶端转 θ，中心位移 = (h/2·sinθ, h/2·(1-cosθ))。
  */
-import puppeteer from 'puppeteer-core';
 import fs from 'fs';
 import path from 'path';
 
-const URL = process.argv[2] || 'http://localhost:5174/';
+const MANIFEST = path.resolve('public/assets/sprites/manifest.json');
 const OUT = path.resolve('public/animations/engineer_spanner_anim.json');
-const executablePath = [
-  process.env.LOCALAPPDATA + '/Google/Chrome/Application/chrome.exe',
-  'C:/Program Files/Google/Chrome/Application/chrome.exe',
-].find(p => fs.existsSync(p));
-if (!executablePath) throw new Error('找不到 Chrome');
 
-// ---------- 1. 从编辑器取真实骨架 ----------
-const browser = await puppeteer.launch({
-  executablePath, headless: true, args: ['--no-sandbox', '--enable-unsafe-swiftshader'],
-});
-const page = await browser.newPage();
-await page.goto(URL, { waitUntil: 'networkidle2' });
-await page.evaluate(() => {
-  Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('动画编辑器'))?.click();
-});
-await new Promise(r => setTimeout(r, 2000));
-const parts = await page.evaluate(() => window.__animator.project.directions.S.parts);
-const targetId = await page.evaluate(() => window.__animator.project.targetId);
-await browser.close();
+// ---------- 1. 由 manifest 重建骨架（与 AnimatorStudio.makeSkeleton 同构） ----------
+const manifest = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
+const SPRITES_PREFIX = 'assets/sprites/';
+const PART_CANVAS_SIZE = 2;
+const char = manifest.characters?.[0];
+
+/** 骨架节点（父节点必须排在子节点之前） */
+const SKELETON_NODES = [
+  { id: 'torso_L', label: '身体下半部分', parent: null, src: { kind: 'body', part: 'torso_L' } },
+  { id: 'torso_U', label: '身体上半部分', parent: 'torso_L', src: { kind: 'body', part: 'torso_U' } },
+  { id: 'back', label: '背包', parent: 'torso_U', src: { kind: 'slot', slot: 'back' } },
+  { id: 'head', label: '头', parent: 'torso_U', src: { kind: 'head' } },
+  { id: 'hat', label: '帽子', parent: 'head', src: { kind: 'slot', slot: 'hat' } },
+  { id: 'upper_arm_L', label: '左上臂', parent: 'torso_U', src: { kind: 'body', part: 'arm' } },
+  { id: 'forearm_L', label: '左下臂', parent: 'upper_arm_L', src: { kind: 'body', part: 'arm' } },
+  { id: 'hand_L', label: '左手', parent: 'forearm_L', src: { kind: 'slot', slot: 'hand' } },
+  { id: 'upper_arm_R', label: '右上臂', parent: 'torso_U', src: { kind: 'body', part: 'arm' } },
+  { id: 'forearm_R', label: '右下臂', parent: 'upper_arm_R', src: { kind: 'body', part: 'arm' } },
+  { id: 'hand_R', label: '右手', parent: 'forearm_R', src: { kind: 'slot', slot: 'hand' } },
+  { id: 'weapon', label: '武器', parent: 'hand_R', src: { kind: 'slot', slot: 'weapon' } },
+  { id: 'thigh_L', label: '左大腿', parent: 'torso_L', src: { kind: 'body', part: 'leg' } },
+  { id: 'calf_L', label: '左小腿', parent: 'thigh_L', src: { kind: 'body', part: 'leg' } },
+  { id: 'foot_L', label: '左脚', parent: 'calf_L', src: { kind: 'slot', slot: 'foot' } },
+  { id: 'thigh_R', label: '右大腿', parent: 'torso_L', src: { kind: 'body', part: 'leg' } },
+  { id: 'calf_R', label: '右小腿', parent: 'thigh_R', src: { kind: 'body', part: 'leg' } },
+  { id: 'foot_R', label: '右脚', parent: 'calf_R', src: { kind: 'slot', slot: 'foot' } },
+];
+
+function manifestLayout(id) {
+  const L = manifest.sharedBodies.layoutS;
+  const raw = L[id] ?? (id === 'back' ? L['back_S'] : undefined);
+  if (!raw) return null;
+  const cy = raw.bottom !== undefined ? raw.bottom - raw.h / 2 : (raw.top ?? 0) + raw.h / 2;
+  return { cx: raw.cx, cy, h: raw.h };
+}
+
+function makeSkeleton() {
+  const grid = manifest.partGrid ?? 512;
+  const anchor = manifest.anchorFootY ?? grid * 0.8;
+  const px = PART_CANVAS_SIZE / grid;
+  const zOrder = manifest.sharedBodies.zOrderS ?? [];
+
+  const centerOf = new Map();
+  const parts = [];
+  SKELETON_NODES.forEach((node, i) => {
+    // 与编辑器一致：初始只挂火柴棒（素体）图片，头部/装备节点保留但留空
+    let texturePath = '';
+    if (node.src.kind === 'body') {
+      texturePath = `${SPRITES_PREFIX}${manifest.sharedBodies.path}/${node.src.part}.png`;
+    }
+
+    const lay = manifestLayout(node.id);
+    let layout = null;
+    if (lay) {
+      const world = { x: (lay.cx - grid / 2) * px, y: (anchor - lay.cy) * px };
+      const parentWorld = (node.parent && centerOf.get(node.parent)) || { x: 0, y: 0 };
+      layout = { x: world.x - parentWorld.x, y: world.y - parentWorld.y, h: lay.h * px };
+      centerOf.set(node.id, world);
+    }
+
+    const zIdx = zOrder.indexOf(node.id);
+    parts.push({
+      id: node.id,
+      label: node.label,
+      parent: node.parent,
+      texturePath,
+      size: PART_CANVAS_SIZE,
+      layout,
+      defaultPose: { x: 0, y: 0, rot: 0, scale: 1 },
+      zIndex: zIdx >= 0 ? zIdx : zOrder.length + i,
+      overlay: null,
+    });
+  });
+  return parts;
+}
+
+const parts = makeSkeleton();
+const targetId = char?.id ?? 'engineer_spanner';
 console.log(`骨架：${parts.length} 节点，targetId=${targetId}`);
 
 const DEF = { x: 0, y: 0, rot: 0, scale: 1 };

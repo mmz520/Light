@@ -1,6 +1,6 @@
 {
   "version": 4,
-  "generatedAt": "2026-10-30T08:40:31+00:00",
+  "generatedAt": "2026-11-02T06:06:22+00:00",
   "partGrid": 512,
   "anchorFootY": 412,
   "cell": {
@@ -55,33 +55,33 @@
         "h": 70
       },
       "upper_arm_L": {
-        "cx": 198,
+        "cx": 218,
         "top": 160,
         "h": 75
       },
       "upper_arm_R": {
-        "cx": 314,
+        "cx": 294,
         "top": 160,
         "h": 75
       },
       "forearm_L": {
-        "cx": 198,
+        "cx": 218,
         "top": 225,
         "h": 64
       },
       "forearm_R": {
-        "cx": 314,
+        "cx": 294,
         "top": 225,
         "h": 64
       },
       "head": {
         "cx": 256,
-        "bottom": 136,
+        "bottom": 150,
         "h": 110
       },
       "hat": {
         "cx": 256,
-        "bottom": 60,
+        "bottom": 74,
         "h": 50
       },
       "back": {
@@ -105,17 +105,17 @@
         "h": 50
       },
       "hand_L": {
-        "cx": 198,
+        "cx": 218,
         "bottom": 293,
         "h": 44
       },
       "hand_R": {
-        "cx": 314,
+        "cx": 294,
         "bottom": 293,
         "h": 44
       },
       "weapon": {
-        "cx": 322,
+        "cx": 302,
         "bottom": 291,
         "h": 95
       }

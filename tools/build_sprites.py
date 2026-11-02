@@ -57,7 +57,7 @@ def _layout() -> dict:
     torsoL_b = thigh_b - leg_h + 8
     torsoU_b = torsoL_b - PART_H["torso_L"] + 10
     top_y = torsoU_b - PART_H["torso_U"] + 10
-    head_b = top_y - 16
+    head_b = top_y - 2
     head_top = head_b - PART_H["head"]
     uarm_top = top_y + 8
     farm_top = uarm_top + arm_h - 10
@@ -69,10 +69,10 @@ def _layout() -> dict:
         "calf_R": {"cx": 280, "bottom": FOOT_Y, "h": calf_h},
         "torso_L": {"cx": 256, "bottom": torsoL_b, "h": PART_H["torso_L"]},
         "torso_U": {"cx": 256, "bottom": torsoU_b, "h": PART_H["torso_U"]},
-        "upper_arm_L": {"cx": 198, "top": uarm_top, "h": arm_h},
-        "upper_arm_R": {"cx": 314, "top": uarm_top, "h": arm_h},
-        "forearm_L": {"cx": 198, "top": farm_top, "h": farm_h},
-        "forearm_R": {"cx": 314, "top": farm_top, "h": farm_h},
+        "upper_arm_L": {"cx": 218, "top": uarm_top, "h": arm_h},
+        "upper_arm_R": {"cx": 294, "top": uarm_top, "h": arm_h},
+        "forearm_L": {"cx": 218, "top": farm_top, "h": farm_h},
+        "forearm_R": {"cx": 294, "top": farm_top, "h": farm_h},
         "head": {"cx": 256, "bottom": head_b, "h": PART_H["head"]},
         "hat": {"cx": 256, "bottom": head_top + 34, "h": EQUIP_H["hat"]},
         "back": {"cx": 256, "bottom": torsoL_b + 10, "h": EQUIP_H["back"]},
@@ -80,9 +80,9 @@ def _layout() -> dict:
         "back_S": {"cx": 256, "top": top_y + 4, "h": EQUIP_H["back_strap"]},
         "foot_L": {"cx": 232, "bottom": FOOT_Y, "h": EQUIP_H["foot"]},
         "foot_R": {"cx": 280, "bottom": FOOT_Y, "h": EQUIP_H["foot"]},
-        "hand_L": {"cx": 198, "bottom": wrist + 4, "h": EQUIP_H["hand"]},
-        "hand_R": {"cx": 314, "bottom": wrist + 4, "h": EQUIP_H["hand"]},
-        "weapon": {"cx": 322, "bottom": wrist + 2, "h": EQUIP_H["weapon"]},
+        "hand_L": {"cx": 218, "bottom": wrist + 4, "h": EQUIP_H["hand"]},
+        "hand_R": {"cx": 294, "bottom": wrist + 4, "h": EQUIP_H["hand"]},
+        "weapon": {"cx": 302, "bottom": wrist + 2, "h": EQUIP_H["weapon"]},
         "_meta": {"top_y": top_y, "wrist_y": wrist},
     }
 
@@ -140,10 +140,33 @@ def _drop_lines(alpha: np.ndarray) -> np.ndarray:
     return out
 
 
+def _drop_debris(rgb: np.ndarray, alpha: np.ndarray) -> np.ndarray:
+    """去掉模型画出的面板边框残留：细长竖/横条，以及孤立的中性灰小点。
+
+    · 细条：短边 ≤3px 且长边 ≥8px（网格线被内容切断后留下的片段）
+    · 灰点：面积 ≤30px 且 RGB 通道差 ≤20（分隔线/压缩噪点），纯黑描边面积大不会被误删
+    """
+    labels, _ = ndimage.label(alpha > 40)
+    out = alpha.copy()
+    for i, sl in enumerate(ndimage.find_objects(labels), 1):
+        if sl is None:
+            continue
+        m = labels[sl] == i
+        h = sl[0].stop - sl[0].start
+        w = sl[1].stop - sl[1].start
+        px = rgb[sl][m]
+        spread = int(px.max()) - int(px.min())
+        thin = min(h, w) <= 3 and max(h, w) >= 8
+        speck = int(m.sum()) <= 30 and spread <= 20
+        if thin or speck:
+            out[sl][m] = 0
+    return out
+
+
 def load_trimmed(path: Path, min_side: int = 24) -> Image.Image | None:
     img = Image.open(path).convert("RGB")
     rgb = np.asarray(img)
-    alpha = _drop_lines(remove_bg(rgb))
+    alpha = _drop_debris(rgb, _drop_lines(remove_bg(rgb)))
     ys, xs = np.nonzero(alpha > 128)
     if len(xs) == 0:
         return None
@@ -161,16 +184,22 @@ def scale_h(img: Image.Image, target_h: int) -> Image.Image:
 def grid_cell(path: Path, r: int, c: int, rows: int, cols: int) -> Image.Image | None:
     img = Image.open(path).convert("RGB")
     W, H = img.width // cols, img.height // rows
+    m = 10  # 裁掉格子边界，去掉网格分隔线（约 8px 灰线）
     tmp = Path("_cell_tmp.png")
-    img.crop((c * W, r * H, (c + 1) * W, (r + 1) * H)).save(tmp)
+    img.crop((c * W + m, r * H + m, (c + 1) * W - m, (r + 1) * H - m)).save(tmp)
     return load_trimmed(tmp)
 
 
 def save_part(part: Image.Image, target_h: int, out_path: Path):
-    """部件统一缩放到规范高度后，紧裁剪直接存盘（无画布留白）。"""
+    """部件统一缩放到规范高度后，紧裁剪直接存盘（无画布留白）。
+
+    缩放后再清一次残留：源图上 alpha 较低的边框像素被重采样放大后会变成可见细线/噪点。
+    """
     p = scale_h(part, target_h)
+    rgba = np.asarray(p)
+    alpha = _drop_debris(rgba[..., :3], rgba[..., 3])
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    p.save(out_path)
+    Image.fromarray(np.dstack([rgba[..., :3], alpha]), "RGBA").save(out_path)
 
 
 EQUIP_CELL_MAP = {"S": (0, 0), "E": (0, 1), "N": (1, 0), "W": (1, 1)}
