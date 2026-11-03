@@ -101,14 +101,14 @@ ENEMY_ACTIONS = ["idle", "walk", "attack", "hit", "death"]
 
 # ---------- 覆盖贴图：每个骨架节点一张 2x2 大图（S/E/N/W 四格） ----------
 # key → (overlay 目标高度 px, 共用的节点 id 列表)
-# overlay 比节点素体大一圈，确保完全包住火柴棒
+# overlay 高度 ≈ 素体高度（+5%），宽度也紧贴素体，生成时 prompt 要求"竖直紧贴火柴棒形状"
 OVERLAY_H = {
-    "torso_L":  int(PART_H["torso_L"] * 1.5),       # 90
-    "torso_U":  int(PART_H["torso_U"] * 1.5),       # 105
-    "thigh":    int(PART_H["leg"]    * 1.35),       # 121
-    "calf":     int(round(PART_H["leg"] * 0.85) * 1.35),  # calf_h = 76 → 103
-    "upper_arm":int(PART_H["arm"]    * 1.35),       # 101
-    "forearm":  int(round(PART_H["arm"] * 0.85) * 1.35), # farm_h = 64 → 86
+    "torso_L":   int(round(PART_H["torso_L"] * 1.05)),
+    "torso_U":   int(round(PART_H["torso_U"] * 1.05)),
+    "thigh":     int(round(PART_H["leg"]    * 1.05)),
+    "calf":      int(round(round(PART_H["leg"] * 0.85) * 1.05)),
+    "upper_arm": int(round(PART_H["arm"]    * 1.05)),
+    "forearm":   int(round(round(PART_H["arm"] * 0.85) * 1.05)),
 }
 OVERLAY_SHARED_NODES = {
     "torso_L":   ["torso_L"],
