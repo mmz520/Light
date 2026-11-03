@@ -30,6 +30,8 @@ interface Props {
   poses: Record<string, PartPose>;
   /** 每个部件的显示/隐藏 */
   visibility: Record<string, boolean>;
+  /** 帧图动画覆盖：partId → 当前帧贴图路径（激活期间替代部件自身贴图） */
+  frameOverrides?: Record<string, string>;
   /** 'partId' 或 'partId#overlay' */
   selectedId: string | null;
   tool: ViewportTool;
@@ -48,6 +50,8 @@ interface NodeRecord {
   /** 基准布局偏移（相对父节点中心，世界单位）：由 PartDef.layout 决定 */
   baseX: number;
   baseY: number;
+  /** 当前已应用的贴图 key（帧图动画按此判断是否需要换图） */
+  curMapKey: string | null;
   overlay?: THREE.Mesh;
   overlayOutline?: THREE.LineSegments;
 }
@@ -188,6 +192,7 @@ function rebuildParts(st: SceneState, parts: PartDef[]) {
       group, mesh, outline,
       baseX: part.layout?.x ?? 0,
       baseY: part.layout?.y ?? 0,
+      curMapKey: part.texturePath || null,
     };
     if (part.overlay !== undefined && part.overlay !== null) {
       const ovMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, side: THREE.DoubleSide });
@@ -339,11 +344,11 @@ const wrapPi = (a: number) => {
 };
 
 export function Viewport3D({
-  parts, poses, visibility, selectedId, tool, onToolChange, onSelect, onPoseChange, onOverlayChange,
+  parts, poses, visibility, frameOverrides, selectedId, tool, onToolChange, onSelect, onPoseChange, onOverlayChange,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const propsRef = useRef({ parts, poses, visibility, selectedId, tool, onToolChange, onSelect, onPoseChange, onOverlayChange });
-  propsRef.current = { parts, poses, visibility, selectedId, tool, onToolChange, onSelect, onPoseChange, onOverlayChange };
+  const propsRef = useRef({ parts, poses, visibility, frameOverrides, selectedId, tool, onToolChange, onSelect, onPoseChange, onOverlayChange });
+  propsRef.current = { parts, poses, visibility, frameOverrides, selectedId, tool, onToolChange, onSelect, onPoseChange, onOverlayChange };
 
   const sceneRef = useRef<SceneState | null>(null);
   const interactionRef = useRef<Interaction>(null);
@@ -721,7 +726,7 @@ export function Viewport3D({
     let raf = 0;
     const loop = () => {
       raf = requestAnimationFrame(loop);
-      const { parts: ps, poses: pp, visibility: vv, selectedId: sel, tool: curTool } = propsRef.current;
+      const { parts: ps, poses: pp, visibility: vv, frameOverrides: fo, selectedId: sel, tool: curTool } = propsRef.current;
 
       // 同步层级 pose / 可见性 / 选中框
       for (const part of ps) {
@@ -734,6 +739,20 @@ export function Viewport3D({
         rec.group.scale.set(pose.scale * (pose.scaleX ?? 1), pose.scale * (pose.scaleY ?? 1), pose.scale);
         rec.group.visible = vv[part.id] !== false;
         rec.outline.visible = sel === part.id;
+        // 帧图动画覆盖：激活期间切换贴图，结束/未激活恢复部件自身贴图
+        const wantTex = (fo?.[part.id] ?? part.texturePath) || null;
+        if (rec.curMapKey !== wantTex) {
+          const mat = rec.mesh.material as THREE.MeshBasicMaterial;
+          if (wantTex) {
+            mat.map = loadTexture(assetUrl(wantTex));
+            mat.opacity = 1;
+          } else {
+            mat.map = null;
+            mat.opacity = 0;
+          }
+          mat.needsUpdate = true;
+          rec.curMapKey = wantTex;
+        }
         if (rec.overlay) {
           const ov = part.overlay;
           rec.overlay.visible = rec.group.visible && !!ov;

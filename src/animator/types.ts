@@ -78,6 +78,88 @@ export interface Clip {
   /** 动作事件帧（相对 clip 起点的秒） —— 攻击判定、footstep 音效等 */
   events?: { t: number; type: string; payload?: Record<string, unknown> }[];
   tracks: Track[];
+  /** 局部动画列表（作用于单个节点的子动画，见 LocalAnim） */
+  localAnims?: LocalAnim[];
+}
+
+/* ---------------- 局部动画（挂在 clip 上，作用于单个节点） ---------------- */
+
+export interface LocalAnimBase {
+  id: string;
+  /** 显示名 */
+  name: string;
+  /** 作用节点 */
+  partId: string;
+  /** 在主时间轴上的起始时刻（秒） */
+  start: number;
+  /**
+   * 是否循环。循环的局部动画不占据刻度条显示；
+   * 播放时从 start 起按自身时长循环，直到 clip 结束。
+   */
+  loop: boolean;
+}
+
+/** 帧图动画：按 fps 依次切换节点贴图，时长 = 帧数 / fps 自动计算 */
+export interface LocalFramesAnim extends LocalAnimBase {
+  kind: 'frames';
+  /** 帧图路径序列（相对 public/，按播放顺序） */
+  images: string[];
+  /** 播放速率（帧/秒） */
+  fps: number;
+}
+
+/** 关键帧动画：与主 clip 同机制的关键帧，作用于单个节点（t 相对局部起点） */
+export interface LocalKeysAnim extends LocalAnimBase {
+  kind: 'keys';
+  /** 局部时长（秒） */
+  duration: number;
+  keys: Keyframe[];
+}
+
+export type LocalAnim = LocalFramesAnim | LocalKeysAnim;
+
+/** 局部动画时长（帧图型自动计算；关键帧型取 duration） */
+export function localAnimDuration(a: LocalAnim): number {
+  if (a.kind === 'frames') {
+    return a.images.length > 0 ? a.images.length / Math.max(0.01, a.fps) : 0;
+  }
+  return Math.max(0, a.duration);
+}
+
+/** 采样时刻该局部动画的局部时间；未激活返回 null */
+function localAnimTime(a: LocalAnim, t: number, dur: number): number | null {
+  if (a.loop) {
+    if (t < a.start - 1e-6) return null;
+    return (t - a.start) % dur;
+  }
+  if (t < a.start - 1e-6 || t > a.start + dur + 1e-6) return null;
+  return Math.max(0, Math.min(dur, t - a.start));
+}
+
+export interface LocalSampleResult {
+  /** 帧图型覆盖：partId → 当前帧贴图路径 */
+  frames: Record<string, string>;
+  /** 关键帧型覆盖：partId → 覆盖 pose（激活期间替代主轨道） */
+  poses: Record<string, PartPose>;
+}
+
+/** 采样 clip 的全部局部动画（用于播放/预览时的覆盖） */
+export function sampleLocalAnims(clip: Clip, t: number): LocalSampleResult {
+  const frames: Record<string, string> = {};
+  const poses: Record<string, PartPose> = {};
+  for (const a of clip.localAnims ?? []) {
+    const dur = localAnimDuration(a);
+    if (dur <= 0) continue;
+    const local = localAnimTime(a, t, dur);
+    if (local === null) continue;
+    if (a.kind === 'frames') {
+      const idx = Math.min(a.images.length - 1, Math.floor((local * a.fps) + 1e-6));
+      frames[a.partId] = a.images[idx];
+    } else if (a.keys.length > 0) {
+      poses[a.partId] = sampleTrack({ partId: a.partId, keys: a.keys }, local);
+    }
+  }
+  return { frames, poses };
 }
 
 /**

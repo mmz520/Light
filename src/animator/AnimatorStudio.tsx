@@ -7,6 +7,7 @@ import {
   DirectionEntry,
   ImageMetadata,
   Keyframe,
+  LocalAnim,
   ManifestOverlay,
   MetadataImage,
   OverlayDef,
@@ -15,12 +16,15 @@ import {
   PartPose,
   SpriteManifest,
   sampleClip,
+  sampleLocalAnims,
 } from './types';
 import { Viewport3D, ViewportTool, assetUrl } from './Viewport3D';
 import { Timeline } from './Timeline';
 import { PartTree } from './PartTree';
 import { PosePanel } from './PosePanel';
 import { ClipPanel } from './ClipPanel';
+import { LocalAnimModal } from './LocalAnimModal';
+import { LocalAnimPanel } from './LocalAnimPanel';
 
 /**
  * 部件骨架（v4 资源体系）
@@ -324,6 +328,12 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
   const [cursorT, setCursorT] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
 
+  // —— 局部动画 ——
+  const [selectedLocalId, setSelectedLocalId] = useState<string | null>(null);
+  const [localModalOpen, setLocalModalOpen] = useState(false);
+  /** 非空 = 正在编辑该帧图型局部动画的帧序列 */
+  const [editFramesTarget, setEditFramesTarget] = useState<LocalAnim | null>(null);
+
   // 加载资源清单：优先 assets/sprites/manifest.json（v4 素体+装备布局），失败回退旧 metadata.json 图库
   const [manifest, setManifest] = useState<SpriteManifest | null>(null);
   useEffect(() => {
@@ -533,6 +543,65 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
     }));
   }, [activeClipName, updateClip]);
 
+  // —— 局部动画 CRUD（挂在当前 clip 上） ——
+
+  const addLocalAnim = useCallback((a: LocalAnim) => {
+    updateClip(activeClipName, c => ({ ...c, localAnims: [...(c.localAnims ?? []), a] }));
+    setSelectedLocalId(a.id);
+  }, [activeClipName, updateClip]);
+
+  const updateLocalAnim = useCallback((id: string, mut: (a: LocalAnim) => LocalAnim) => {
+    updateClip(activeClipName, c => ({
+      ...c,
+      localAnims: (c.localAnims ?? []).map(x => (x.id === id ? mut(x) : x)),
+    }));
+  }, [activeClipName, updateClip]);
+
+  const deleteLocalAnim = useCallback((id: string) => {
+    updateClip(activeClipName, c => ({ ...c, localAnims: (c.localAnims ?? []).filter(x => x.id !== id) }));
+    setSelectedLocalId(s => (s === id ? null : s));
+  }, [activeClipName, updateClip]);
+
+  const toggleLocalLoop = useCallback((id: string) => {
+    updateLocalAnim(id, a => ({ ...a, loop: !a.loop }));
+  }, [updateLocalAnim]);
+
+  const moveLocalAnim = useCallback((id: string, newStart: number) => {
+    updateLocalAnim(id, a => ({ ...a, start: Math.max(0, Math.min(clip ? clip.duration : 0, newStart)) }));
+  }, [updateLocalAnim, clip]);
+
+  /** 向关键帧型局部动画写入关键帧（局部时间 = cursorT − start，越界则不写） */
+  const writeLocalKeyAt = useCallback((id: string, pose: PartPose) => {
+    const la = clip?.localAnims?.find(x => x.id === id);
+    if (!la || la.kind !== 'keys') return;
+    const lt = cursorT - la.start;
+    if (lt < -1e-6 || lt > la.duration + 1e-6) return;
+    const t = Math.max(0, Math.min(la.duration, lt));
+    updateLocalAnim(id, a => {
+      if (a.kind !== 'keys') return a;
+      const keys = a.keys.filter(k => Math.abs(k.t - t) > 1e-3);
+      keys.push({ t, pose: { ...pose }, ease: 'linear' });
+      keys.sort((k1, k2) => k1.t - k2.t);
+      return { ...a, keys };
+    });
+  }, [clip, cursorT, updateLocalAnim]);
+
+  const moveLocalKey = useCallback((id: string, fromT: number, toT: number) => {
+    updateLocalAnim(id, a => {
+      if (a.kind !== 'keys') return a;
+      const key = a.keys.find(k => Math.abs(k.t - fromT) < 1e-3);
+      if (!key) return a;
+      const keys = a.keys.filter(k => Math.abs(k.t - fromT) > 1e-3 && Math.abs(k.t - toT) > 1e-3);
+      keys.push({ ...key, t: Math.max(0, Math.min(a.duration, toT)) });
+      keys.sort((k1, k2) => k1.t - k2.t);
+      return { ...a, keys };
+    });
+  }, [updateLocalAnim]);
+
+  const deleteLocalKey = useCallback((id: string, t: number) => {
+    updateLocalAnim(id, a => (a.kind === 'keys' ? { ...a, keys: a.keys.filter(k => Math.abs(k.t - t) > 1e-3) } : a));
+  }, [updateLocalAnim]);
+
   // 播放循环
   useEffect(() => {
     if (!isPlaying || !clip) return;
@@ -557,16 +626,33 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
     return () => cancelAnimationFrame(raf);
   }, [isPlaying, clip]);
 
-  /** 采样当前时间点（相对父节点的 pose + 可见性） */
-  const sampled = useMemo(
-    () => (clip ? sampleClip(clip, cursorT) : { poses: {}, visibility: {} }),
-    [clip, cursorT],
-  );
+  /** 采样当前时间点（相对父节点的 pose + 可见性 + 局部动画覆盖） */
+  const sampled = useMemo(() => {
+    if (!clip) return { poses: {} as Record<string, PartPose>, visibility: {} as Record<string, boolean>, localFrames: {} as Record<string, string> };
+    const s = sampleClip(clip, cursorT);
+    const lv = sampleLocalAnims(clip, cursorT);
+    // 关键帧型局部动画在激活期间覆盖主轨道 pose
+    return { ...s, poses: { ...s.poses, ...lv.poses }, localFrames: lv.frames };
+  }, [clip, cursorT]);
   const sampledRef = useRef(sampled);
   sampledRef.current = sampled;
 
   const selectedPartId = selectedId && selectedId.includes('#') ? selectedId.split('#')[0] : selectedId;
   const selectedPart = entry?.parts.find(p => p.id === selectedPartId) ?? null;
+  const selectedLocal = clip?.localAnims?.find(a => a.id === selectedLocalId) ?? null;
+  /** gizmo / 属性面板的 pose 修改是否写入局部动画（选中关键帧型局部动画且指针在范围内） */
+  const localEditActive = !!selectedLocal && selectedLocal.kind === 'keys'
+    && cursorT >= selectedLocal.start - 1e-6
+    && cursorT <= selectedLocal.start + selectedLocal.duration + 1e-6;
+
+  /** pose 写入路由：局部动画编辑态 → 写局部关键帧；否则写主轨道 */
+  const routePoseChange = useCallback((partId: string, pose: PartPose) => {
+    if (localEditActive && selectedLocal && selectedLocal.partId === partId) {
+      writeLocalKeyAt(selectedLocal.id, pose);
+    } else {
+      writeKeyAt(partId, pose);
+    }
+  }, [localEditActive, selectedLocal, writeLocalKeyAt, writeKeyAt]);
 
   // 导出 JSON
   const handleSave = () => {
@@ -708,11 +794,12 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
           parts={entry.parts}
           poses={sampled.poses}
           visibility={sampled.visibility}
+          frameOverrides={sampled.localFrames}
           selectedId={selectedId}
           tool={tool}
           onToolChange={setTool}
           onSelect={setSelectedId}
-          onPoseChange={(partId, pose) => writeKeyAt(partId, pose)}
+          onPoseChange={routePoseChange}
           onOverlayChange={(partId, overlay: OverlayDef) => updatePart(partId, p => ({ ...p, overlay }))}
         />
       </div>
@@ -738,7 +825,7 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
           onPoseChange={(field, value) => {
             if (!selectedPartId) return;
             const pose = { ...(sampled.poses[selectedPartId] ?? selectedPart!.defaultPose), [field]: value };
-            writeKeyAt(selectedPartId, pose);
+            routePoseChange(selectedPartId, pose);
           }}
           onZIndexChange={z => selectedPartId && updatePart(selectedPartId, p => ({ ...p, zIndex: z }))}
           onSetTexture={path => selectedPartId && updatePart(selectedPartId, p => ({ ...p, texturePath: path }))}
@@ -760,6 +847,24 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
           onSetLoop={(loop, loopStart) => updateClip(activeClipName, c => ({ ...c, loop, loopStart }))}
           onSetDuration={d => updateClip(activeClipName, c => ({ ...c, duration: Math.max(0.1, d) }))}
           onDeleteThisKeyframe={() => deleteKeyframesAt(cursorT)}
+        />
+        <LocalAnimPanel
+          locals={clip.localAnims ?? []}
+          parts={entry.parts}
+          selected={selectedLocal}
+          cursorT={cursorT}
+          sampledPose={selectedLocal ? sampled.poses[selectedLocal.partId] ?? null : null}
+          onSelect={setSelectedLocalId}
+          onUpdate={updateLocalAnim}
+          onDelete={deleteLocalAnim}
+          onRecordKey={id => {
+            const la = clip.localAnims?.find(a => a.id === id);
+            const pose = la ? sampled.poses[la.partId] : null;
+            if (pose) writeLocalKeyAt(id, pose);
+          }}
+          onDeleteKey={deleteLocalKey}
+          onEditFrames={a => { setEditFramesTarget(a); setLocalModalOpen(true); }}
+          onAdd={() => setLocalModalOpen(true)}
         />
       </div>
 
@@ -788,8 +893,29 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
           hasFrameClipboard={!!frameClip}
           onCopyFrame={copyFrame}
           onPasteFrame={pasteFrame}
+          locals={clip.localAnims ?? []}
+          selectedLocalId={selectedLocalId}
+          onSelectLocal={setSelectedLocalId}
+          onMoveLocal={moveLocalAnim}
+          onMoveLocalKey={moveLocalKey}
+          onDeleteLocalKey={deleteLocalKey}
+          onDeleteLocal={deleteLocalAnim}
+          onToggleLocalLoop={toggleLocalLoop}
+          onAddLocal={() => setLocalModalOpen(true)}
         />
       </div>
+
+      {/* 新建 / 编辑局部动画弹窗 */}
+      <LocalAnimModal
+        open={localModalOpen}
+        images={images}
+        parts={entry.parts}
+        defaultName={`局部动画_${(clip.localAnims?.length ?? 0) + 1}`}
+        initial={editFramesTarget && editFramesTarget.kind === 'frames' ? editFramesTarget : null}
+        onCreate={a => addLocalAnim(a)}
+        onUpdate={a => updateLocalAnim(a.id, () => a)}
+        onClose={() => { setLocalModalOpen(false); setEditFramesTarget(null); }}
+      />
     </div>
   );
 }

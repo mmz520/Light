@@ -8,9 +8,13 @@
  * · 关键帧：拖动移动（保留 pose），双击删除，右键轨道添加
  *   - 绿色 = 普通关键帧；红色 = 记录了"隐藏"；蓝色 = 记录了"显示"
  * · 播放指针 / 关键帧支持最小步长吸附（下拉框可切换，步长 = 帧数 / fps）
+ * · 局部动画区（轨道下方）：
+ *   - 非循环局部动画显示为色块，长度 = 自身时长，可拖动改起始时间；
+ *     关键帧型局部动画的帧在色块内显示为菱形，可拖动/双击删除
+ *   - 循环型局部动画不占时间轴显示（右侧面板中管理）
  */
 import { useEffect, useRef, useState } from 'react';
-import { Clip, PartDef } from './types';
+import { Clip, LocalAnim, localAnimDuration, PartDef } from './types';
 
 interface Props {
   clip: Clip;
@@ -28,6 +32,16 @@ interface Props {
   hasFrameClipboard: boolean;
   onCopyFrame: (t: number) => void;
   onPasteFrame: (t: number) => void;
+  /** 局部动画 */
+  locals: LocalAnim[];
+  selectedLocalId: string | null;
+  onSelectLocal: (id: string | null) => void;
+  onMoveLocal: (id: string, newStart: number) => void;
+  onMoveLocalKey: (id: string, fromT: number, toT: number) => void;
+  onDeleteLocalKey: (id: string, t: number) => void;
+  onDeleteLocal: (id: string) => void;
+  onToggleLocalLoop: (id: string) => void;
+  onAddLocal: () => void;
 }
 
 const TRACK_H = 24;
@@ -52,6 +66,7 @@ function niceStep(duration: number): number {
 export function Timeline({
   clip, parts, cursorT, isPlaying, fps, onCursorChange, onPlayToggle, onStop, onAddKeyframe, onDeleteKeyframe, onMoveKeyframe,
   hasFrameClipboard, onCopyFrame, onPasteFrame,
+  locals, selectedLocalId, onSelectLocal, onMoveLocal, onMoveLocalKey, onDeleteLocalKey, onDeleteLocal, onToggleLocalLoop, onAddLocal,
 }: Props) {
   const rulerRef = useRef<HTMLDivElement>(null);
   const [rulerW, setRulerW] = useState(0);
@@ -59,12 +74,15 @@ export function Timeline({
   const [draggingCursor, setDraggingCursor] = useState(false);
   const [snapIdx, setSnapIdx] = useState(0); // 默认不吸附
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null); // 红线右键菜单
+  const [localMenu, setLocalMenu] = useState<{ x: number; y: number; animId: string } | null>(null); // 局部动画右键菜单
+  const [dragLocal, setDragLocal] = useState<{ id: string; origStart: number; startX: number } | null>(null);
+  const [dragLocalKey, setDragLocalKey] = useState<{ id: string; origT: number; startX: number; dur: number } | null>(null);
   const snapFrames = SNAP_OPTIONS[snapIdx]?.frames ?? 0;
 
   // 右键菜单：点别处 / Esc / 滚动即关闭
   useEffect(() => {
-    if (!menu) return;
-    const close = () => setMenu(null);
+    if (!menu && !localMenu) return;
+    const close = () => { setMenu(null); setLocalMenu(null); };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
     window.addEventListener('mousedown', close);
     window.addEventListener('keydown', onKey);
@@ -74,7 +92,7 @@ export function Timeline({
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('wheel', close);
     };
-  }, [menu]);
+  }, [menu, localMenu]);
 
   /** 打开红线右键菜单（避免超出视口） */
   const openMenu = (clientX: number, clientY: number) => {
@@ -144,8 +162,51 @@ export function Timeline({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dragKf, scale, clip.duration, onMoveKeyframe, snapFrames]);
 
+  // 拖动局部动画色块（改起始时间）
+  useEffect(() => {
+    if (!dragLocal) return;
+    const a = locals.find(x => x.id === dragLocal.id);
+    const dur = a ? localAnimDuration(a) : 0;
+    const onMove = (e: MouseEvent) => {
+      const raw = Math.max(0, Math.min(clip.duration - dur, dragLocal.origStart + (e.clientX - dragLocal.startX) / scale));
+      const newStart = snapT(raw);
+      if (Math.abs(newStart - dragLocal.origStart) > 1e-4) {
+        onMoveLocal(dragLocal.id, newStart);
+        setDragLocal({ ...dragLocal, origStart: newStart, startX: e.clientX });
+      }
+    };
+    const onUp = () => setDragLocal(null);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragLocal, scale, clip.duration, locals, onMoveLocal, snapFrames]);
+
+  // 拖动局部动画关键帧（局部时间）
+  useEffect(() => {
+    if (!dragLocalKey) return;
+    const onMove = (e: MouseEvent) => {
+      const raw = Math.max(0, Math.min(dragLocalKey.dur, dragLocalKey.origT + (e.clientX - dragLocalKey.startX) / scale));
+      const frame = snapFrames > 0 && fps > 0 ? snapFrames / fps : 0;
+      const newT = frame > 0 ? Math.round(raw / frame) * frame : raw;
+      if (Math.abs(newT - dragLocalKey.origT) > 1e-4) {
+        onMoveLocalKey(dragLocalKey.id, dragLocalKey.origT, newT);
+        setDragLocalKey({ ...dragLocalKey, origT: newT, startX: e.clientX });
+      }
+    };
+    const onUp = () => setDragLocalKey(null);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragLocalKey, scale, fps, onMoveLocalKey, snapFrames]);
+
   const sortedParts = [...parts].sort((a, b) => a.zIndex - b.zIndex);
   const trackById = new Map(clip.tracks.map(tr => [tr.partId, tr]));
+  const partLabel = new Map(parts.map(p => [p.id, p.label]));
+  // 循环型局部动画不占时间轴显示（右侧面板中管理）
+  const laneLocals = locals.filter(a => !a.loop);
+  const selLocal = (id: string) => selectedLocalId === id;
 
   const addKeyOnRow = (e: React.MouseEvent, partId: string) => {
     e.preventDefault();
@@ -266,6 +327,43 @@ export function Timeline({
               </span>
             </div>
           ))}
+          {/* 局部动画区：标题行 + 每个非循环局部动画一行 */}
+          <div style={{
+            height: TRACK_H, padding: '0 8px', borderBottom: '1px solid #2a2a30', background: '#25252a',
+            display: 'flex', alignItems: 'center', gap: 5, boxSizing: 'border-box',
+          }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#b892d8' }}>⬒ 局部动画</span>
+            <span style={{ fontSize: 9, opacity: .45 }}>{locals.length}</span>
+            <button
+              onClick={onAddLocal}
+              title="新建局部动画"
+              style={{
+                marginLeft: 'auto', width: 20, height: 16, fontSize: 12, lineHeight: 1,
+                background: '#1a1a1e', border: '1px solid #4a4', borderRadius: 3,
+                color: '#5d5', cursor: 'pointer', padding: 0, flexShrink: 0,
+              }}
+            >＋</button>
+          </div>
+          {laneLocals.map(a => (
+            <div
+              key={a.id}
+              onClick={() => onSelectLocal(selLocal(a.id) ? null : a.id)}
+              style={{
+                height: TRACK_H, padding: '0 8px', borderBottom: '1px solid #2a2a30',
+                display: 'flex', alignItems: 'center', gap: 6, boxSizing: 'border-box',
+                background: selLocal(a.id) ? '#2a2434' : '#1e1e22', cursor: 'pointer',
+              }}
+            >
+              <div style={{ width: 8, height: 8, background: a.kind === 'frames' ? '#b6f' : '#f82', borderRadius: 2, flexShrink: 0 }} />
+              <span style={{
+                fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1,
+                color: selLocal(a.id) ? '#d9c2f0' : '#ccc',
+              }}>
+                {a.name}
+                <span style={{ fontSize: 9, opacity: .4, marginLeft: 3 }}>{partLabel.get(a.partId) ?? a.partId}</span>
+              </span>
+            </div>
+          ))}
         </div>
 
         {/* 右：帧条 */}
@@ -298,6 +396,84 @@ export function Timeline({
                     />
                   );
                 })}
+              </div>
+            );
+          })}
+
+          {/* 局部动画区（右）：标题占位 + 色块行 */}
+          <div style={{ height: TRACK_H, borderBottom: '1px solid #2a2a30', background: '#25252a' }} />
+          {laneLocals.map(a => {
+            const dur = localAnimDuration(a);
+            const selected = selLocal(a.id);
+            return (
+              <div
+                key={a.id}
+                onMouseDown={e => { if (e.button === 0) { seekFromEvent(e.clientX); } }}
+                style={{
+                  position: 'relative', height: TRACK_H, width: totalW,
+                  borderBottom: '1px solid #2a2a30', background: selected ? '#241f2e' : '#1f1f24', boxSizing: 'border-box',
+                  cursor: 'ew-resize',
+                }}
+                title="点击定位播放指针"
+              >
+                {/* 色块：长度 = 局部动画时长 */}
+                {dur > 0 && (
+                  <div
+                    onMouseDown={e => {
+                      if (e.button !== 0) return;
+                      e.stopPropagation();
+                      onSelectLocal(a.id);
+                      setDragLocal({ id: a.id, origStart: a.start, startX: e.clientX });
+                    }}
+                    onContextMenu={e => {
+                      e.preventDefault(); e.stopPropagation();
+                      onSelectLocal(a.id);
+                      const W = 190, H = 84;
+                      setLocalMenu({
+                        x: Math.min(e.clientX, window.innerWidth - W - 8),
+                        y: Math.min(e.clientY, window.innerHeight - H - 8),
+                        animId: a.id,
+                      });
+                    }}
+                    title={`${a.name} · ${dur.toFixed(2)}s · 拖动改起始时间 · 右键菜单`}
+                    style={{
+                      position: 'absolute', left: a.start * scale, top: 3, height: TRACK_H - 8,
+                      width: Math.max(6, dur * scale),
+                      background: selected
+                        ? (a.kind === 'frames' ? '#9b59d0' : '#e08a2e')
+                        : (a.kind === 'frames' ? '#6f3d96' : '#a2621c'),
+                      border: `1px solid ${selected ? '#d9c2f0' : 'rgba(255,255,255,.18)'}`,
+                      borderRadius: 3, cursor: 'grab', overflow: 'hidden',
+                      display: 'flex', alignItems: 'center', padding: '0 4px',
+                    }}
+                  >
+                    <span style={{
+                      fontSize: 9, color: 'rgba(255,255,255,.85)', whiteSpace: 'nowrap',
+                      overflow: 'hidden', textOverflow: 'ellipsis', pointerEvents: 'none',
+                    }}>
+                      {a.kind === 'frames' ? `▤ ${a.images.length}帧@${a.fps}fps` : `◆ ${a.keys.length}关键帧`}
+                    </span>
+                  </div>
+                )}
+                {/* 关键帧型：帧菱形（局部时间 → 绝对位置） */}
+                {a.kind === 'keys' && a.keys.map(k => (
+                  <div
+                    key={k.t}
+                    onMouseDown={e => {
+                      if (e.button !== 0) return;
+                      e.stopPropagation();
+                      onSelectLocal(a.id);
+                      setDragLocalKey({ id: a.id, origT: k.t, startX: e.clientX, dur });
+                    }}
+                    onDoubleClick={e => { e.stopPropagation(); onDeleteLocalKey(a.id, k.t); }}
+                    title={`局部 t=${k.t.toFixed(3)}s · 拖动移动 · 双击删除`}
+                    style={{
+                      position: 'absolute', left: (a.start + k.t) * scale - 4, top: TRACK_H / 2 - 4,
+                      width: 8, height: 8, background: '#ffd166', border: '1px solid #6b5200',
+                      cursor: 'grab', transform: 'rotate(45deg)', borderRadius: 1, zIndex: 6,
+                    }}
+                  />
+                ))}
               </div>
             );
           })}
@@ -353,6 +529,33 @@ export function Timeline({
             }}
           >
             <span style={{ color: '#5d5', width: 14, display: 'inline-block' }}>⎘</span>粘贴到当前帧
+          </button>
+        </div>
+      )}
+
+      {/* 局部动画右键菜单 */}
+      {localMenu && (
+        <div
+          onMouseDown={e => e.stopPropagation()}
+          onContextMenu={e => { e.preventDefault(); e.stopPropagation(); }}
+          style={{
+            position: 'fixed', left: localMenu.x, top: localMenu.y, zIndex: 200,
+            background: '#232327', border: '1px solid #4a4a52', borderRadius: 6,
+            boxShadow: '0 8px 24px rgba(0,0,0,.55)', padding: 4, minWidth: 150,
+            fontSize: 12, color: '#ddd', userSelect: 'none',
+          }}
+        >
+          <button
+            onClick={() => { onToggleLocalLoop(localMenu.animId); setLocalMenu(null); }}
+            style={MENU_ITEM}
+          >
+            <span style={{ color: '#fb0', width: 14, display: 'inline-block' }}>∞</span>切换循环
+          </button>
+          <button
+            onClick={() => { onDeleteLocal(localMenu.animId); setLocalMenu(null); }}
+            style={{ ...MENU_ITEM, color: '#f88' }}
+          >
+            <span style={{ width: 14, display: 'inline-block' }}>✕</span>删除局部动画
           </button>
         </div>
       )}
