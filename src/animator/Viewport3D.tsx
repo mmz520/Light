@@ -18,7 +18,7 @@
  * gizmo 挂在被选节点的父级空间里，轴向与该局部空间一致。
  * 覆盖贴图是 part Group 的一个子 Mesh，改它自己的变换不影响任何子节点。
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OverlayDef, PartDef, PartPose } from './types';
 
@@ -353,6 +353,11 @@ export function Viewport3D({
   const sceneRef = useRef<SceneState | null>(null);
   const interactionRef = useRef<Interaction>(null);
   const raycasterRef = useRef(new THREE.Raycaster());
+
+  // —— 工具栏：视口级开关（当前：隐藏覆盖物贴图） ——
+  const [overlaysHidden, setOverlaysHidden] = useState(false);
+  const overlaysHiddenRef = useRef(overlaysHidden);
+  overlaysHiddenRef.current = overlaysHidden;
 
   // —— 初始化（一次） ——
   useEffect(() => {
@@ -755,7 +760,8 @@ export function Viewport3D({
         }
         if (rec.overlay) {
           const ov = part.overlay;
-          rec.overlay.visible = rec.group.visible && !!ov;
+          // 工具栏"隐藏覆盖物贴图"开启时一并隐藏（invisible 对象也不会被光线拾取）
+          rec.overlay.visible = rec.group.visible && !!ov && !overlaysHiddenRef.current;
           if (ov) {
             rec.overlay.position.set(ov.offsetX, ov.offsetY, (ov.offsetZ ?? 0) + 0.01);
             rec.overlay.rotation.set((ov.rotX ?? 0) * DEG, (ov.rotY ?? 0) * DEG, ov.rot * DEG);
@@ -878,6 +884,24 @@ export function Viewport3D({
             {label}
           </button>
         ))}
+      </div>
+      {/* —— 视口工具栏（纵向，后续工具往下追加） —— */}
+      <div style={{
+        position: 'absolute', top: 42, left: 10, display: 'flex', flexDirection: 'column', gap: 4, zIndex: 10,
+      }}>
+        <button
+          onClick={() => setOverlaysHidden(v => !v)}
+          style={{
+            padding: '4px 10px', fontSize: 12, cursor: 'pointer',
+            border: '1px solid #555', borderRadius: 4,
+            background: overlaysHidden ? '#c82' : 'rgba(30,30,34,.85)',
+            color: overlaysHidden ? '#000' : '#ccc',
+            fontWeight: overlaysHidden ? 700 : 400,
+          }}
+          title={overlaysHidden ? '显示覆盖物贴图' : '隐藏覆盖物贴图'}
+        >
+          {overlaysHidden ? '🚫 覆盖物' : '👁 覆盖物'}
+        </button>
       </div>
       <div style={{
         position: 'absolute', bottom: 8, left: 10, fontSize: 10, color: '#888', zIndex: 10,
