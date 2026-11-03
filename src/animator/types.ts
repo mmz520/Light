@@ -208,6 +208,15 @@ export interface ManifestEquipment {
   pathByDirection?: Partial<Record<DirTab, string>>;
 }
 
+export interface ManifestOverlay {
+  id: string;
+  /** 共用此 overlay 的骨架节点 id 列表 */
+  sharedNodes: string[];
+  /** 左右侧是否镜像（thigh/calf/arm 等 L/R 共用一张图时 R 侧需镜像） */
+  mirrored?: boolean;
+  pathByDirection?: Partial<Record<DirTab, string>>;
+}
+
 export interface SpriteManifest {
   version: number;
   /** 单部件画布尺寸（px），默认 512 */
@@ -232,6 +241,7 @@ export interface SpriteManifest {
     equipment?: Record<string, string>;
   }[];
   equipment?: ManifestEquipment[];
+  overlays?: ManifestOverlay[];
 }
 
 /** 缓动函数名 —— runtime 和编辑器共用一个查表 */

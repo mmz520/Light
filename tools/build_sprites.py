@@ -99,11 +99,33 @@ POS_ALIAS = {"back": "back_S"}
 
 ENEMY_ACTIONS = ["idle", "walk", "attack", "hit", "death"]
 
+# ---------- 覆盖贴图：每个骨架节点一张 2x2 大图（S/E/N/W 四格） ----------
+# key → (overlay 目标高度 px, 共用的节点 id 列表)
+# overlay 比节点素体大一圈，确保完全包住火柴棒
+OVERLAY_H = {
+    "torso_L":  int(PART_H["torso_L"] * 1.5),       # 90
+    "torso_U":  int(PART_H["torso_U"] * 1.5),       # 105
+    "thigh":    int(PART_H["leg"]    * 1.35),       # 121
+    "calf":     int(round(PART_H["leg"] * 0.85) * 1.35),  # calf_h = 76 → 103
+    "upper_arm":int(PART_H["arm"]    * 1.35),       # 101
+    "forearm":  int(round(PART_H["arm"] * 0.85) * 1.35), # farm_h = 64 → 86
+}
+OVERLAY_SHARED_NODES = {
+    "torso_L":   ["torso_L"],
+    "torso_U":   ["torso_U"],
+    "thigh":     ["thigh_L", "thigh_R"],
+    "calf":      ["calf_L", "calf_R"],
+    "upper_arm": ["upper_arm_L", "upper_arm_R"],
+    "forearm":   ["forearm_L", "forearm_R"],
+}
+
 
 # ---------------- 基础工具 ----------------
 
 def latest_png(folder: Path) -> Path | None:
-    files = sorted(folder.glob("*.png")) if folder.is_dir() else []
+    if not folder.is_dir():
+        return None
+    files = sorted(list(folder.glob("*.png")) + list(folder.glob("*.jpg")) + list(folder.glob("*.jpeg")))
     return files[-1] if files else None
 
 
@@ -293,10 +315,68 @@ def build_character():
         else:
             x, y = pos["cx"] - part.width // 2, pos["top"]
         preview.alpha_composite(part, (max(0, x), max(0, y)))
+
+    # 最后一层：画 overlay（盖在火柴棒之上，不画在装备/头/帽子/武器之上）
+    # 对每个 overlay key，找到对应骨架节点的画布位置，按 OVERLAY_H 缩放后合成
+    OVERLAY_NODE_POS = {
+        "torso_L":   "torso_L",
+        "torso_U":   "torso_U",
+        "thigh":     "thigh_L",     # L/R overlay 同一张图，画两次
+        "calf":      "calf_L",
+        "upper_arm": "upper_arm_L",
+        "forearm":   "forearm_L",
+    }
+    for key, anchor_node in OVERLAY_NODE_POS.items():
+        pos = LAYOUT.get(anchor_node)
+        ov_path = OUT / "overlays" / key / "S.png"
+        if not pos or not ov_path.exists():
+            continue
+        ov_img = Image.open(ov_path).convert("RGBA")
+        ov_img = scale_h(ov_img, OVERLAY_H[key])
+        if "bottom" in pos:
+            ox, oy = pos["cx"] - ov_img.width // 2, pos["bottom"] - ov_img.height
+        else:
+            ox, oy = pos["cx"] - ov_img.width // 2, pos["top"]
+        preview.alpha_composite(ov_img, (max(0, ox), max(0, oy)))
+        # 对大腿/小腿/上臂/前臂：右侧也画一次（overlay 左右共用）
+        mirror_map = {"thigh": "thigh_R", "calf": "calf_R", "upper_arm": "upper_arm_R", "forearm": "forearm_R"}
+        right_node = mirror_map.get(key)
+        if right_node:
+            rpos = LAYOUT.get(right_node)
+            if rpos:
+                if "bottom" in rpos:
+                    rx, ry = rpos["cx"] - ov_img.width // 2, rpos["bottom"] - ov_img.height
+                else:
+                    rx, ry = rpos["cx"] - ov_img.width // 2, rpos["top"]
+                preview.alpha_composite(ov_img, (max(0, rx), max(0, ry)))
     pv = SRC / "preview"
     pv.mkdir(exist_ok=True)
     preview.save(pv / "character_S_preview.png")
     print("  preview → sprite_ani/preview/character_S_preview.png")
+
+
+# ---------------- 覆盖贴图（overlay） ----------------
+
+def build_overlays():
+    """读取 sprite_ani/overlays/{key}/ 下的 2x2 大图，裁剪四方向格子，
+    缩放后输出到 public/assets/sprites/overlays/{key}/{S,E,N,W}.png。"""
+    count = 0
+    for key in OVERLAY_H:
+        src = latest_png(SRC / "overlays" / key)
+        if not src:
+            print(f"  ! 缺 overlays/{key} 源图")
+            continue
+        out_base = OUT / "overlays" / key
+        for d in DIRS4:
+            r, c = EQUIP_CELL_MAP[d]
+            cell = grid_cell(src, r, c, 2, 2)
+            if cell:
+                save_part(cell, OVERLAY_H[key], out_base / f"{d}.png")
+                count += 1
+    if count:
+        print(f"  overlays: {count} 张 → public/assets/sprites/overlays/")
+    else:
+        print("  overlays: 未生成")
 
 
 # ---------------- 敌人（自动按空隙分帧） ----------------
@@ -380,6 +460,15 @@ def build_manifest(enemy_actions: dict):
             "equipment": {"hat": "engineer_cap", "back": "gearpack",
                           "hand": "gloves", "foot": "boots", "weapon": "wrench"},
         }],
+        "overlays": [
+            {
+                "id": f"{k}_overlay",
+                "sharedNodes": v,
+                "mirrored": len(v) > 1,
+                "pathByDirection": pbd(f"overlays/{k}"),
+            }
+            for k, v in OVERLAY_SHARED_NODES.items()
+        ],
         "equipment": [
             {"id": "engineer_cap", "slot": "hat", "sharedImage": False,
              "pathByDirection": pbd("equipment/hat/engineer_cap")},
@@ -418,6 +507,7 @@ def build_manifest(enemy_actions: dict):
 
 def main() -> int:
     print("build_sprites: 大图 → public/assets/sprites/")
+    build_overlays()
     build_character()
     enemy_actions = build_enemy("rust_hound")
     build_manifest(enemy_actions)

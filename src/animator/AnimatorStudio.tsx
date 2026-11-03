@@ -7,6 +7,7 @@ import {
   DirectionEntry,
   ImageMetadata,
   Keyframe,
+  ManifestOverlay,
   MetadataImage,
   OverlayDef,
   PartDef,
@@ -97,6 +98,26 @@ function equipTexture(manifest: SpriteManifest, slot: string, dir: DirTab): stri
   return rel ? SPRITES_PREFIX + rel : '';
 }
 
+/**
+ * 在 manifest.overlays 中查找覆盖该节点的 overlay。
+ * 如果节点是 R 侧且 overlay 标记 mirrored，则返回 scaleX: -1 实现左右镜像。
+ */
+function nodeOverlay(manifest: SpriteManifest, nodeId: string, dir: DirTab): OverlayDef | null {
+  const overlays: ManifestOverlay[] = (manifest.overlays ?? []) as ManifestOverlay[];
+  for (const ov of overlays) {
+    if (!ov.sharedNodes?.includes(nodeId)) continue;
+    const rel = ov.pathByDirection?.[dir];
+    if (!rel) continue;
+    const isRight = /_R$/.test(nodeId);
+    return {
+      texturePath: SPRITES_PREFIX + rel,
+      offsetX: 0, offsetY: 0, rot: 0, scale: 1,
+      scaleX: ov.mirrored && isRight ? -1 : 1,
+    };
+  }
+  return null;
+}
+
 /** 按 manifest 的骨架顺序与布局构建一套部件（每个方向一套） */
 function makeSkeleton(dir: DirTab, manifest: SpriteManifest): PartDef[] {
   const grid = manifest.partGrid ?? 512;
@@ -141,7 +162,7 @@ function makeSkeleton(dir: DirTab, manifest: SpriteManifest): PartDef[] {
       layout,
       defaultPose: { x: 0, y: 0, rot: 0, scale: 1 },
       zIndex: zIdx >= 0 ? zIdx : zOrder.length + i,
-      overlay: null,
+      overlay: nodeOverlay(manifest, node.id, dir),
     });
   });
   return parts;
@@ -261,7 +282,8 @@ function migrateProject(p: AnimatorProject, manifest: SpriteManifest | null, ava
   };
 }
 
-/** 加载工程后校正节点集合：与当前骨架不一致时用骨架重建 part 定义，动画数据保留 */
+/** 加载工程后校正节点集合：与当前骨架不一致时用骨架重建 part 定义，动画数据保留；
+ * 即便节点集合相同，也会把 manifest 的 overlay 合并进去（确保新覆盖物自动生效）。 */
 function alignParts(
   directions: AnimatorProject['directions'],
   manifest: SpriteManifest | null,
@@ -275,7 +297,18 @@ function alignParts(
     const sameSet =
       dir.parts.length === skeleton.length &&
       skeleton.every(s => dir.parts.some(p => p.id === s.id));
-    out[tab.tab] = sameSet ? dir : { ...dir, parts: skeleton };
+    if (sameSet && manifest) {
+      // 节点集合没变，但把 manifest 的 overlay 合并进去
+      out[tab.tab] = {
+        ...dir,
+        parts: dir.parts.map(p => ({
+          ...p,
+          overlay: p.overlay ?? nodeOverlay(manifest, p.id, tab.tab),
+        })),
+      };
+    } else {
+      out[tab.tab] = { ...dir, parts: skeleton };
+    }
   }
   return out;
 }

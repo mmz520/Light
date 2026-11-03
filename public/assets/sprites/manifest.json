@@ -1,6 +1,6 @@
 {
   "version": 4,
-  "generatedAt": "2026-11-03T01:58:46+00:00",
+  "generatedAt": "2026-11-03T02:43:16+00:00",
   "partGrid": 512,
   "anchorFootY": 412,
   "cell": {
@@ -152,6 +152,90 @@
         "hand": "gloves",
         "foot": "boots",
         "weapon": "wrench"
+      }
+    }
+  ],
+  "overlays": [
+    {
+      "id": "torso_L_overlay",
+      "sharedNodes": [
+        "torso_L"
+      ],
+      "mirrored": false,
+      "pathByDirection": {
+        "S": "overlays/torso_L/S.png",
+        "E": "overlays/torso_L/E.png",
+        "N": "overlays/torso_L/N.png",
+        "W": "overlays/torso_L/W.png"
+      }
+    },
+    {
+      "id": "torso_U_overlay",
+      "sharedNodes": [
+        "torso_U"
+      ],
+      "mirrored": false,
+      "pathByDirection": {
+        "S": "overlays/torso_U/S.png",
+        "E": "overlays/torso_U/E.png",
+        "N": "overlays/torso_U/N.png",
+        "W": "overlays/torso_U/W.png"
+      }
+    },
+    {
+      "id": "thigh_overlay",
+      "sharedNodes": [
+        "thigh_L",
+        "thigh_R"
+      ],
+      "mirrored": true,
+      "pathByDirection": {
+        "S": "overlays/thigh/S.png",
+        "E": "overlays/thigh/E.png",
+        "N": "overlays/thigh/N.png",
+        "W": "overlays/thigh/W.png"
+      }
+    },
+    {
+      "id": "calf_overlay",
+      "sharedNodes": [
+        "calf_L",
+        "calf_R"
+      ],
+      "mirrored": true,
+      "pathByDirection": {
+        "S": "overlays/calf/S.png",
+        "E": "overlays/calf/E.png",
+        "N": "overlays/calf/N.png",
+        "W": "overlays/calf/W.png"
+      }
+    },
+    {
+      "id": "upper_arm_overlay",
+      "sharedNodes": [
+        "upper_arm_L",
+        "upper_arm_R"
+      ],
+      "mirrored": true,
+      "pathByDirection": {
+        "S": "overlays/upper_arm/S.png",
+        "E": "overlays/upper_arm/E.png",
+        "N": "overlays/upper_arm/N.png",
+        "W": "overlays/upper_arm/W.png"
+      }
+    },
+    {
+      "id": "forearm_overlay",
+      "sharedNodes": [
+        "forearm_L",
+        "forearm_R"
+      ],
+      "mirrored": true,
+      "pathByDirection": {
+        "S": "overlays/forearm/S.png",
+        "E": "overlays/forearm/E.png",
+        "N": "overlays/forearm/N.png",
+        "W": "overlays/forearm/W.png"
       }
     }
   ],
