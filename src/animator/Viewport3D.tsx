@@ -136,17 +136,72 @@ function makeOutline(color: number): THREE.LineSegments {
   return new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true }));
 }
 
+/** 裁剪区域（UV，原点左下） */
+interface UvRect {
+  u: number;
+  v: number;
+  w: number;
+  h: number;
+}
+
+/** 裁剪贴图缓存：同一张图的不同裁剪区域必须各建一个 texture，否则 offset/repeat 互相污染 */
+const croppedCache = new Map<string, THREE.Texture>();
+const croppedWaiters = new Map<string, ((tex: THREE.Texture) => void)[]>();
+
+function loadCroppedTexture(url: string, rect: UvRect, onReady?: (tex: THREE.Texture) => void): THREE.Texture {
+  const key = `${url}|${rect.u.toFixed(4)},${rect.v.toFixed(4)},${rect.w.toFixed(4)},${rect.h.toFixed(4)}`;
+  let tex = croppedCache.get(key);
+  if (!tex) {
+    tex = new THREE.Texture();
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.repeat.set(rect.w, rect.h);
+    tex.offset.set(rect.u, rect.v);
+    const img = new Image();
+    img.onload = () => {
+      tex!.image = img;
+      tex!.needsUpdate = true;
+      const fs = croppedWaiters.get(key) ?? [];
+      croppedWaiters.delete(key);
+      fs.forEach((fn) => fn(tex!));
+    };
+    img.src = url;
+    croppedCache.set(key, tex);
+  }
+  if (onReady) {
+    if (tex.image) onReady(tex);
+    else {
+      const arr = croppedWaiters.get(key) ?? [];
+      arr.push(onReady);
+      croppedWaiters.set(key, arr);
+    }
+  }
+  return tex;
+}
+
 function applyPartMaterial(mat: THREE.MeshBasicMaterial, part: PartDef, onAspect?: (aspect: number) => void) {
   if (part.texturePath) {
-    const tex = loadTexture(assetUrl(part.texturePath), t => {
+    const rect = part.textureRect ?? null;
+    const url = assetUrl(part.texturePath);
+    const report = (t: THREE.Texture) => {
       const img = t.image as { width?: number; height?: number } | undefined;
-      if (onAspect && img?.width && img?.height) onAspect(img.width / img.height);
-    });
-    const img = tex.image as { width?: number; height?: number } | undefined;
-    if (onAspect && img?.width && img?.height) onAspect(img.width / img.height);
+      if (!onAspect || !img?.width || !img?.height) return;
+      const w = img.width * (rect ? rect.w : 1);
+      const h = img.height * (rect ? rect.h : 1);
+      if (w > 0 && h > 0) onAspect(w / h);
+    };
+    const tex = rect ? loadCroppedTexture(url, rect, report) : loadTexture(url, report);
+    if (tex.image) report(tex);
     mat.map = tex;
     mat.color.set('#ffffff');
     mat.opacity = 1;
+  } else if (part.color) {
+    // 纯色节点：铺一块色块（宽高比 1:1，高度仍取布局值）
+    mat.map = null;
+    mat.color.set(part.color);
+    mat.opacity = 1;
+    onAspect?.(1);
   } else {
     // 无贴图：占位块保持布局尺寸，但完全不填充内容（全透明），
     // 只有被选中时靠描边显示位置
@@ -158,6 +213,9 @@ function applyPartMaterial(mat: THREE.MeshBasicMaterial, part: PartDef, onAspect
 }
 
 export function assetUrl(path: string): string {
+  if (!path) return '';
+  // 已是完整 URL（gameasset:// / http(s):// / data:）就直接用，不要再拼 BASE_URL
+  if (/^[a-z][a-z0-9+.-]*:/i.test(path)) return path;
   return `${import.meta.env.BASE_URL}${path}`;
 }
 
@@ -179,10 +237,11 @@ function rebuildParts(st: SceneState, parts: PartDef[]) {
     // 有 layout：高度取 manifest 布局值，宽度按贴图真实宽高比自动换算（材质就绪后修正）
     // 无 layout：沿用旧版整幅画布尺寸（所有部件同尺寸叠加）
     const hWorld = part.layout ? part.layout.h : (part.size ?? 0.4);
+    const flip = part.mirror ? -1 : 1;
     mesh.scale.set(hWorld, hWorld, 1);
     mesh.renderOrder = part.zIndex;
     mesh.userData = { selectId: part.id };
-    applyPartMaterial(mat, part, aspect => mesh.scale.set(hWorld * aspect, hWorld, 1));
+    applyPartMaterial(mat, part, aspect => mesh.scale.set(hWorld * aspect * flip, hWorld, 1));
     const outline = makeOutline(0xffe066);
     outline.renderOrder = 9998;
     mesh.add(outline);
@@ -197,14 +256,22 @@ function rebuildParts(st: SceneState, parts: PartDef[]) {
     if (part.overlay !== undefined && part.overlay !== null) {
       const ovMat = new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, side: THREE.DoubleSide });
       if (part.overlay.texturePath) {
-        ovMat.map = loadTexture(assetUrl(part.overlay.texturePath));
+        const ovRect = part.overlay.textureRect ?? null;
+        ovMat.map = ovRect
+          ? loadCroppedTexture(assetUrl(part.overlay.texturePath), ovRect)
+          : loadTexture(assetUrl(part.overlay.texturePath));
         ovMat.color.set('#ffffff');
+      } else if (part.overlay.textureColor) {
+        ovMat.map = null;
+        ovMat.color.set(part.overlay.textureColor);
+        ovMat.opacity = 1;
       } else {
         ovMat.color.set('#6cf');
         ovMat.opacity = 0.6;
       }
       const ovMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), ovMat);
-      ovMesh.renderOrder = part.zIndex + 0.1;
+      // 覆盖贴图有独立层级：未设置时默认压在所属节点之上（+0.1）
+      ovMesh.renderOrder = part.overlay.zIndex ?? part.zIndex + 0.1;
       ovMesh.userData = { selectId: `${part.id}#overlay` };
       const ovOutline = makeOutline(0x6cf);
       ovOutline.renderOrder = 9999;
@@ -214,8 +281,8 @@ function rebuildParts(st: SceneState, parts: PartDef[]) {
       rec.overlayOutline = ovOutline;
     }
     st.nodes.set(part.id, rec);
-    // 无贴图的空部件不参与拾取（全透明整幅画布会挡住其它部件的点击）
-    if (part.texturePath) st.meshes.push(mesh);
+    // 无贴图且无纯色的空部件不参与拾取（全透明整幅画布会挡住其它部件的点击）
+    if (part.texturePath || part.color) st.meshes.push(mesh);
     if (rec.overlay) st.meshes.push(rec.overlay);
   }
 
@@ -750,9 +817,15 @@ export function Viewport3D({
           const mat = rec.mesh.material as THREE.MeshBasicMaterial;
           if (wantTex) {
             mat.map = loadTexture(assetUrl(wantTex));
+            mat.color.set('#ffffff');
+            mat.opacity = 1;
+          } else if (part.color) {
+            mat.map = null;
+            mat.color.set(part.color);
             mat.opacity = 1;
           } else {
             mat.map = null;
+            mat.color.set('#ffffff');
             mat.opacity = 0;
           }
           mat.needsUpdate = true;
@@ -860,7 +933,7 @@ export function Viewport3D({
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-      <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+      <div ref={containerRef} data-anim-host style={{ width: '100%', height: '100%' }} />
       <div style={{
         position: 'absolute', top: 10, left: 10, display: 'flex', gap: 4, zIndex: 10,
       }}>

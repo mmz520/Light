@@ -1,6 +1,6 @@
 ---
 name: "sprite-8dir-anim"
-description: "Unified generation spec for matchstick-assembled characters, shared equipment, and frame-animated monsters (Don't Starve dark-gothic steampunk style). Invoke when creating character body parts, shared heads/equipment, or monster sprite sheets for the game."
+description: "Unified generation spec for matchstick-assembled characters, shared equipment, and paper-doll monsters animated by keyframes (skeleton templates: humanoid10 / humanoid5 / beast5 / custom). Invoke when creating character body parts, shared heads/equipment, or monster part sheets for the game."
 ---
 
 # 《饥荒》式角色 · 装备 · 怪物 统一生成 Skill
@@ -8,9 +8,10 @@ description: "Unified generation spec for matchstick-assembled characters, share
 > 本 Skill 是本项目 **所有角色资源的唯一标准**。覆盖三种产出：
 > 1. **角色素体**（4 根火柴棒：arm / torso_U / torso_L / leg，全项目共享，新角色只换头）
 > 2. **装备**（全角色共用，手套/武器共用 1 张图，背包/帽子/鞋子 4 方向）
-> 3. **怪物（enemy）**（完整帧动画大图，一动作一张，不拆部件）
+> 3. **怪物（enemy）**（**纸娃娃拆件 + 关键帧动画**，按骨架模板拆成部件出图，动画在编辑器里 K 帧）
 >
-> 生成方式：**素体 = 一张图一根火柴棒；头 / 装备 / 敌人 = 大图 + 网格排布 + 脚本裁剪**。切分、缩放、对齐全部由脚本负责，大模型只管画。
+> 生成方式：**一张图只画一个部件（或一个部件的 4 方向 2×2）**。切分、缩放、对齐全部由脚本负责，大模型只管画。
+> 角色与怪物共用同一套「部件图 → 骨架 → 关键帧 → 导出 JSON」的管线，只有骨架模板（§3.2）不同。
 
 ---
 
@@ -22,13 +23,13 @@ description: "Unified generation spec for matchstick-assembled characters, share
 |------|------|------|
 | 素体部件（arm / torso_U / torso_L / leg） | **一图一部件** | 每张图只画一根火柴棒，居中，无网格线 |
 | 头 / 4 方向装备 | **2×2 网格大图** | 格序 S(左上) E(右上) N(左下) W(右下) |
-| 敌人 | **1×N 横向帧条带** | 一个动作一张，帧按列排布 |
+| 怪物部件 | **2×2 网格大图（每部件一张）** | 一个部件一张大图，格序同上；怪物按模板拆件，见 §3 |
 
 大图上画极细浅灰网格线帮助模型定位，脚本按格切分；单图则整图去底裁剪。
 
 ### 0.2 对齐规则（由脚本负责，模型不用管像素）
 
-- 画布 512×512；脚底线 `FOOT_Y = 412`、怪物地面线 `GROUND_Y = 376` 为全项目硬编码常量。
+- 画布 512×512；脚底线 `FOOT_Y = 412`、怪物地面线同为 `FOOT_Y = 412`（全项目统一，不再有 376 的怪物专用线）。
 - 大模型只需保证：**部件/帧完整、居中、不触边、无地面无阴影无文字**。
 - 脚本负责：去底 → 裁包围盒 → 统一缩放 → 按解剖堆叠位置摆进画布（arm/leg 由引擎镜像复用左右侧）。
 - 装备摆放：hat=头顶、back=躯干后、hand=腕部、foot=脚底、weapon=手侧，由脚本按角色几何推算。
@@ -46,15 +47,16 @@ description: "Unified generation spec for matchstick-assembled characters, share
 
 - 头：一张 2×2 大图同时出 S/E/N/W（同图内天然一致）。
 - 4 方向装备：一张 2×2 大图同时出 S/E/N/W。
-- 敌人：先出 idle（无参考），再以 idle 为参考依次出 walk → attack → hit → death。
+- 怪物：按模板（§3.2）**逐部件**出 2×2 方向大图；先 body（无参考），再 head / 四肢 / 尾（参考同怪物 body 的 S 格，保证配色与比例一致）。
+- 怪物动作不再生成帧图：**动画在编辑器里用关键帧完成**（§3.6），部件图只承载"静态造型"。
 - 旧的 S→E→N→W 跨图参考链不再使用（方向已在同一张图内）。
 
 ### 0.5 大图规格（全项目统一）
 
 | 参数 | 值 | 说明 |
 |------|-----|------|
-| 网格尺寸 | **512×512**（网格大图按 1024 画布 2×2 等分） | 每格一个部件/一帧 |
-| 画布 | 网格大图 1024×1024；敌人条带 1536×1024 | — |
+| 网格尺寸 | **512×512**（网格大图按 1024 画布 2×2 等分） | 每格一个部件 |
+| 画布 | 全部 2×2 大图统一 **1024×1024**（角色头/装备/怪物部件一致） | 不再有帧条带 |
 | 背景 | **纯白 + 极细浅灰色网格线**（仅用于定位，脚本裁掉） | — |
 
 ---
@@ -89,13 +91,12 @@ description: "Unified generation spec for matchstick-assembled characters, share
 
 - 头不在此列：每个角色单独生成（§1.5）；脖子由头与上身自然衔接，不单独出图。
 - 手 = `equipment/hand`，脚 = `equipment/foot`，衣物 = 覆盖 torso 的装备。**素体上绝不允许出现这些东西**。
-- 敌人（enemy）**不适用**火柴棒拆件：敌人是完整的帧动画大图（§3）。
+- 敌人（enemy）**不复用**这套火柴棒素体——每个怪物按自己的骨架模板（§3.2）拆件出图，但同样遵守「一图一部件 / 512 网格 / 锚点对齐」的规矩。
 
 ### 1.2 出图规格
 
 - 素体：单图 1024×1024，部件竖直、居中、占画面高度约 60–70%，四周留白。
-- 头 / 4 方向装备：2×2 网格大图 1024×1024，格序 S(左上) E(右上) N(左下) W(右下)。
-- 敌人：1×N 横向帧条带 1536×1024，帧数 = 该动作的帧数。
+- 头 / 4 方向装备 / 怪物部件：2×2 网格大图 1024×1024，格序 S(左上) E(右上) N(左下) W(右下)。
 
 ### 1.3 部件在图内的位置
 
@@ -256,107 +257,257 @@ NO stitching, NO knuckle seams, NO fingernail, NO skin, NO arm. Not a pair. NO t
 
 ---
 
-## 3. 敌人 enemy（帧动画，不分块）
+## 3. 怪物 enemy（纸娃娃拆件 + 关键帧动画）
 
-### 3.1 生成范式
+### 3.0 范式：怪物 = 角色同款管线
 
-敌人（enemy）不使用分块——**直接生成帧动画大图**。一方向内，先走完所有动作（站立 → 行走 → 攻击 → 受击 → 死亡）再进下一个方向。
+怪物**不再生成帧动画条带**，改为和角色完全一样的管线：
 
-**方向顺序**：S → E → N → W（与角色相同）
-**动作顺序（一方向内）**：`idle` → `walk` → `attack` → `hit` → `death`
+```
+部件 2×2 方向大图  →  脚本裁件  →  骨架（按模板，§3.2）  →  编辑器 K 关键帧  →  导出 project JSON
+```
 
-### 3.2 一方向内的参考链
+| 对比项 | 旧范式（已废弃） | 新范式 |
+|--------|-----------------|--------|
+| 出图 | 一个动作一张 1×N 帧条带 | 一个部件一张 2×2 方向大图 |
+| 动画 | 帧图逐帧播放 | 关键帧驱动骨架（与角色同一套数据结构） |
+| 改动成本 | 改动作要重画整条 | 只调关键帧，不重画 |
+| 方向一致性 | 跨方向靠参考链 | 同一张 2×2 内天然一致 |
+| 运行时 | `dirFrames[dir][action][]` 帧数组 | `parts + clips`，与角色共用播放器 |
 
-- 该方向第一张图 = idle（用 CharacterLock + ViewLock(方向)，无参考）
-- 该方向 walk / attack / hit / death 的参考图 = **该方向 idle 的第一帧**
+**收益**：一个怪物的 3~6 张部件图 → 复用出全部 4 方向 × 5 动作；新增动作零成本。
 
-跨方向参考链不变：E 参考 S，N 参考 E，W 参考 N（但只参考 idle 图，因为前一方向的 idle 已经确定了怪物比例与配色）。
+### 3.1 关节、附加件与 pivot
 
-### 3.3 一方向内 5 张大图布局
+- **关节（joint）**：参与关键帧动画的躯干/肢体节点，数量由模板决定（10 / 5 / 5 / 自定义）。
+- **附加件（attachment）**：头、尾、帽子、武器等挂在关节上的部件，**不计入关节数**，但同样要单独出图。
+- 每个部件必须声明旋转轴（pivot），否则旋转会「甩飞」：
 
-一个方向 = **5 张大图**，每张图 = 一个动作的所有帧，帧按 1 行多列排布，每帧都是 512×512 网格。
+| 部件类型 | pivot | 该部件在自己 512 网格内的锚点 |
+|----------|-------|------------------------------|
+| 肢体段（上臂/前臂/大腿/小腿/兽腿） | **顶端中心**（肩 / 肘 / 髋 / 膝） | (256, 100)，即距顶 100 |
+| 躯干 / 身体（人形） | **底端中心**（腰 / 髋） | (256, 412)，即距底 100 |
+| 头 | **底端中心**（颈） | (256, 412) |
+| 兽形身体（水平体块） | **中心** | (256, 256) |
+| 尾巴 / 武器等水平件 | **根部**（与父件连接的一端） | 用 `pivot: "left"` / `"right"`，锚点 = 该端中点；布局里的 `cx` 表示**根部 X**（不是中心） |
 
-| 动作 | 帧数 | 大图尺寸（列×512 × 1行×512） | 说明 |
-|------|------|---------------------------|------|
-| idle   | 6    | 3072 × 512                | 循环，呼吸 |
-| walk   | 8    | 4096 × 512                | 循环，步态 |
-| attack | 5    | 2560 × 512                | 非循环，第 3 帧命中 |
-| hit    | 3    | 1536 × 512                | 非循环，退后 |
-| death  | 6    | 3072 × 512                | 非循环，倒地 |
+> 脚本只认「部件在画布内的包围盒 + pivot 类型」，模型不用算像素，只需保证**部件竖直/水平摆正、关节端朝向锚点**。
 
-**所有大图网格尺寸相同（512×512）**，脚本统一切。同一方向内 5 张大图的怪物脚底对齐线必须一致（不同动作下怪的脚不飘）。
+### 3.2 四种骨架模板
+
+> 机器可读版本：本 Skill 目录下的 **`templates.json`**（关节 / 父子 / 图像槽 / pivot / 布局 / z / 默认 clip 全在里面）。下面各表与它一一对应；编辑器与脚本**都直接读这份文件**，改模板只改这一处。
+
+| 模板 id | 名称 | 关节数 | 关节与父子关系 | 适用 |
+|---------|------|--------|----------------|------|
+| `humanoid10` | 10 关节人形 | 10 | `torso_L` → `torso_U` → {`upper_arm_L/R` → `forearm_L/R`}；`torso_L` → {`thigh_L/R` → `calf_L/R`} | 与当前角色同款骨架；人形怪、精英怪、BOSS |
+| `humanoid5` | 5 关节人形 | 5 | `body` → {`arm_L`, `arm_R`, `leg_L`, `leg_R`} | 小体量人形小怪，一段式四肢 |
+| `beast5` | 5 关节兽形 | 5 | `body` → {`leg_FL`, `leg_FR`, `leg_BL`, `leg_BR`} | 四足兽（犬/猪/虫），一段式四腿 |
+| `custom` | 自定义 | N | 由 `templates.json` 的 `joints[]` 给出任意父子关系 | 多足、浮空、机械体、触手等特殊怪 |
+
+**镜像复用（强制）**：同一模板里成对的肢体（L/R、FL/FR/BL/BR）**只画一张图**，另一侧水平镜像。因此肢体图必须去掉一切左右特征与写实细节（同 §2.1.1 的 L2 / L4 铁律）。
+
+---
+
+#### 3.2.1 `humanoid10` —— 10 关节人形（当前骨架，其余模板的基准）
+
+**关节（10）**：`torso_L`、`torso_U`、`upper_arm_L/R`、`forearm_L/R`、`thigh_L/R`、`calf_L/R`
+**附加件**：`head`(4 方向)、`hat`、`back`、`hand_L/R`、`foot_L/R`、`weapon`
+
+| 节点 | 父 | 图像槽 | pivot | cx | bottom / top | h | z |
+|------|----|--------|-------|----|--------------|---|----|
+| `thigh_L` | `torso_L` | `leg`（共用，镜像） | top | 232 | bottom 344 | 90 | 1 |
+| `thigh_R` | `torso_L` | `leg`（共用，镜像） | top | 280 | bottom 344 | 90 | 2 |
+| `calf_L` | `thigh_L` | `leg`（共用，缩放 0.85） | top | 232 | bottom 412 | 76 | 3 |
+| `calf_R` | `thigh_R` | `leg`（共用，缩放 0.85） | top | 280 | bottom 412 | 76 | 4 |
+| `torso_L` | —（根） | `torso_L` | bottom | 256 | bottom 262 | 60 | 5 |
+| `torso_U` | `torso_L` | `torso_U` | bottom | 256 | bottom 212 | 70 | 6 |
+| `back` | `torso_U` | 装备 `back` | bottom | 256 | bottom 272 | 100 | 7 |
+| `upper_arm_L` | `torso_U` | `arm`（共用） | top | 218 | top 160 | 75 | 8 |
+| `upper_arm_R` | `torso_U` | `arm`（共用，镜像） | top | 294 | top 160 | 75 | 9 |
+| `forearm_L` | `upper_arm_L` | `arm`（缩放 0.85） | top | 218 | top 225 | 64 | 10 |
+| `forearm_R` | `upper_arm_R` | `arm`（缩放 0.85，镜像） | top | 294 | top 225 | 64 | 11 |
+| `foot_L` | `calf_L` | 装备 `foot` | bottom | 232 | bottom 412 | 50 | 12 |
+| `foot_R` | `calf_R` | 装备 `foot`（镜像） | bottom | 280 | bottom 412 | 50 | 13 |
+| `hand_L` | `forearm_L` | 装备 `hand` | bottom | 218 | bottom 293 | 44 | 14 |
+| `hand_R` | `forearm_R` | 装备 `hand`（镜像） | bottom | 294 | bottom 293 | 44 | 15 |
+| `head` | `torso_U` | `head`（4 方向） | bottom | 256 | bottom 150 | 110 | 16 |
+| `hat` | `head` | 装备 `hat` | bottom | 256 | bottom 74 | 50 | 17 |
+| `weapon` | `forearm_R` | 装备 `weapon` | bottom | 302 | bottom 291 | 95 | 18 |
+
+---
+
+#### 3.2.2 `humanoid5` —— 5 关节人形（一段式四肢）
+
+**关节（5）**：`body`（根）、`arm_L`、`arm_R`、`leg_L`、`leg_R`
+**附加件**：`head`(4 方向)、`hat`、`hand_L/R`、`weapon`
+
+| 节点 | 父 | 图像槽 | pivot | cx | bottom / top | h | z |
+|------|----|--------|-------|----|--------------|---|----|
+| `leg_L` | `body` | `leg`（共用，镜像） | top | 232 | bottom 412 | 150 | 1 |
+| `leg_R` | `body` | `leg`（共用，镜像） | top | 280 | bottom 412 | 150 | 2 |
+| `body` | —（根） | `body`（4 方向） | bottom | 256 | bottom 262 | 140 | 3 |
+| `arm_L` | `body` | `arm`（共用） | top | 214 | top 140 | 130 | 4 |
+| `arm_R` | `body` | `arm`（共用，镜像） | top | 298 | top 140 | 130 | 5 |
+| `head` | `body` | `head`（4 方向） | bottom | 256 | bottom 118 | 100 | 6 |
+| `hat` | `head` | 装备 `hat` | bottom | 256 | bottom 58 | 50 | 7 |
+| `hand_L` | `arm_L` | 装备 `hand` | bottom | 214 | bottom 272 | 44 | 8 |
+| `hand_R` | `arm_R` | 装备 `hand`（镜像） | bottom | 298 | bottom 272 | 44 | 9 |
+| `weapon` | `arm_R` | 装备 `weapon` | bottom | 306 | bottom 270 | 95 | 10 |
+
+> 一段式四肢：**没有肘/膝**，走路靠整条腿摆 + 身体起伏；不要为了"像人"擅自加关节（见 §8 R21）。
+
+---
+
+#### 3.2.3 `beast5` —— 5 关节兽形（四足）
+
+**关节（5）**：`body`（根）、`leg_FL`、`leg_FR`、`leg_BL`、`leg_BR`
+**附加件**：`head`(4 方向)、`tail`（可选）
+
+| 节点 | 父 | 图像槽 | pivot | cx | bottom / top | h | z |
+|------|----|--------|-------|----|--------------|---|----|
+| `tail` | `body` | `tail`（可选，4 方向） | left（根部） | 330 | bottom 250 | 70 | 0 |
+| `leg_BL` | `body` | `leg`（共用，镜像） | top | 224 | bottom 412 | 130 | 1 |
+| `leg_BR` | `body` | `leg`（共用，镜像） | top | 288 | bottom 412 | 130 | 2 |
+| `body` | —（根） | `body`（4 方向） | center | 256 | bottom 300 | 130 | 3 |
+| `leg_FL` | `body` | `leg`（共用） | top | 204 | bottom 412 | 130 | 4 |
+| `leg_FR` | `body` | `leg`（共用，镜像） | top | 308 | bottom 412 | 130 | 5 |
+| `head` | `body` | `head`（4 方向） | bottom | 256 | bottom 168 | 90 | 6 |
+
+> 前后腿共用一个 `leg` 图：**后腿组 z 在 body 之下（被身体挡住），前腿组 z 在 body 之上**。前腿 cx 略宽（204/308）、后腿略窄（224/288），S 方向才有纵深。
+
+---
+
+#### 3.2.4 `custom` —— 自定义模板
+
+关节数量、父子关系、图像槽、pivot、布局全部由模板 JSON 给出（编辑器与脚本共用同一份），格式见下方；`templates.json` 里的前三个模板就是它的三个实例。
+
+```jsonc
+{
+  "id": "custom_my_monster",
+  "name": "自定义（示例：三节触手怪）",
+  "kind": "custom",
+  "joints": [
+    // id / parent / 图像槽 / pivot / 该方向布局（512 画布，S 方向为准）
+    { "id": "body",  "parent": null,   "slot": "body",  "pivot": "bottom",
+      "layout": { "cx": 256, "bottom": 300, "h": 120 }, "z": 1 },
+    { "id": "tail1", "parent": "body", "slot": "tail",  "pivot": "top",
+      "layout": { "cx": 320, "top": 210, "h": 80 },  "z": 0 },
+    { "id": "tail2", "parent": "tail1","slot": "tail",  "pivot": "top",
+      "layout": { "cx": 372, "top": 268, "h": 70 },  "z": -1 }
+  ],
+  "attachments": [
+    { "id": "head", "parent": "body", "slot": "head", "pivot": "bottom",
+      "layout": { "cx": 256, "bottom": 170, "h": 90 }, "z": 2 }
+  ]
+}
+```
+
+- `slot` 相同的关节**共用同一张部件图**（如 `leg` 被 4 条腿共用）；`slot` 命名即 `parts/{slot}/` 目录名。
+- `layout` 里的 `bottom`/`top` 二选一，`h` 为目标像素高度，宽度按贴图宽高比自动算。
+- 自定义模板允许关节数为 1~任意；但**成对肢体仍必须共用张图 + 镜像**，否则四方向四套图会失控。
+
+---
+
+### 3.3 怪物部件出图规范
+
+1. **一图一部件**：每张 2×2 大图只画一个部件（body 就只画 body，不带头、不带腿）。
+2. **单件、无配对**：四肢图只画一条腿/一只臂，左右由引擎镜像（同 §2.1.1 L1/L2）。
+3. **关节端要"可旋转"**：
+   - 肢体段上端（pivot 端）画**关节球 / 铆钉/ 皮套**，作为视觉铰链，且球心对准锚点；
+   - 下端做圆头，并**往上段里探入 6–10px**（重叠区），这样旋转 ±45° 不会露缝；
+   - 躯干分两段时，接缝在腰线，**上段压住下段**。
+4. **体量**：怪物部件允许有厚度（不是火柴棒），但必须 **平涂 + 厚黑描边 + 少量排线**，禁止渐变、3D 渲染、真实毛发（§3.5）。
+5. **方向**：2×2 四格同尺寸、同部件、脚/根部对齐同一条基准线；S 面朝镜头、E 朝右、N 背对、W 朝左。
 
 ### 3.4 怪物造型要求（极简卡通，禁止写实）
 
-- 零部件**控制在 5 个以内**（头、身体、腿、尾巴/武器、1 个标志性特征）
-- 不要画复杂机械结构、多层装甲、可拆卸附件——AI 多次生成时会不一致
-- **画风与角色素体一致**：《饥荒》暗黑哥特手绘风——厚黑描边（略抖动）、带排线阴影、平涂、**暗色调**（炭黑/暗棕/暗navy/旧黄铜），无渐变、无纹理噪点、无真实毛丝
-- 造型要"憨中带邪"：大圆眼、粗短腿、块面化的身体，不要解剖准确的野兽
-- 机械部分只保留 **1–2 个简单形状**（一个圆齿轮 + 一根细管），不要画铆钉阵列、管线网
-- 运动方式明确（走、跑、跳、爬行）
+- 视觉上的零部件**控制在 5 个以内**（头 + 身体 + 腿 + 尾巴/武器 + 1 个标志性特征）。`humanoid10` 只是把同一条腿/臂拆成两段关节，不等于造型变复杂。
+- 不要画复杂机械结构、多层装甲、可拆卸附件——每次生成会不一致，且拆件后接缝对不上。
+- 画风与角色一致：《饥荒》暗黑哥特手绘——厚黑描边（略抖动）、排线阴影、平涂、**暗色调**（炭黑 / 暗棕 / 暗 navy / 旧黄铜），无渐变、无噪点。
+- 造型"憨中带邪"：大圆眼、粗短腿、块面化身体，不要解剖准确的野兽。
+- 机械部分只保留 **1–2 个简单形状**（一个齿轮 + 一根细管），不要铆钉阵列、管线网。
 
-### 3.5 怪物生成流程（完整示例）
+### 3.5 关键帧动画规范（四个模板通用）
+
+怪物与角色共用同一套 clip 结构与编辑器，动作清单固定：
+
+| clip | 时长 | 循环 | 关键姿势 |
+|------|------|------|----------|
+| `idle` | 2.0s | ✅ | 呼吸起伏（身体 ±2px、头微低）+ 四肢静止；首尾帧不完全相同但可无缝循环 |
+| `walk` | 0.8s | ✅ | 四足：**对角步**（FL+BR → FR+BL）；人形：左右交替；身体随步伐上下 3–5px |
+| `attack` | 0.6s | ❌ | 蓄力（后坐 + 抬头）→ **命中帧在第 40–50%**（前扑 / 挥击）→ 收招 |
+| `hit` | 0.4s | ❌ | 后仰 + 后退 6–10px，末帧回弹过冲 |
+| `death` | 1.2s | ❌ | 失去支撑 → 侧倒 / 前扑 → 触地回弹 → 末帧贴地静止 |
+
+运动规则（必须遵守，否则动作会"飘"）：
+
+- 每段肢体的 `pose.rot` 绕**自己的 pivot** 旋转，引擎已按 pivot 处理补偿；不要用整段平移伪造摆动。
+- 子节点（小腿/前臂/头/尾）**只跟随父节点**，不要给子节点写与父节点同向的位移来"装作"整体移动。
+- 死亡末帧必须**真的贴地**（躯干中心 y 降到接近地面），不要靠缩放假装倒地。
+
+> 生成好部件后，在编辑器里按模板建骨架、K 帧，导出 `public/animations/{mon_id}_anim.json`（与角色动画 JSON 同格式；可参考 `tools/build_animations.mjs` 的做法）。
+
+### 3.6 怪物部件 Prompt 模板（以 `beast5` 的 body 为例）
 
 ```
-方向 S：
-  1. GenerateImage → monster_idle_S.png（无参考，CharacterLock + ViewLock(S) + idle 描述）
-  2. GenerateImage → monster_walk_S.png（参考：monster_idle_S.png 第 1 帧）
-  3. GenerateImage → monster_attack_S.png（参考：monster_idle_S.png 第 1 帧）
-  4. GenerateImage → monster_hit_S.png（参考：monster_idle_S.png 第 1 帧）
-  5. GenerateImage → monster_death_S.png（参考：monster_idle_S.png 第 1 帧）
+[CharacterLock —— 整只怪物的长相，全文复用，一字不改]
+Rust Hound (锈蚀猎犬): chunky cartoon four-legged dog, big round glowing yellow eye, dark rust-brown
+flat fur (single flat tone, NO fur strands), one simple brass gear on the shoulder, one thin copper
+pipe on the back, stubby legs, curled wire tail. Only 5 parts. Dark gothic Don't Starve style:
+thick scratchy black ink outline, muted dark palette (dark rust, charcoal, aged brass), subtle
+cross-hatch shading. NO bright colors, NO realism, NO rivet arrays.
 
-方向 E：
-  6. GenerateImage → monster_idle_E.png（参考：monster_idle_S.png）
-  7. GenerateImage → monster_walk_E.png（参考：monster_idle_E.png 第 1 帧）
-  ...
-依此类推 N → W
-```
+[PartLock —— 本图只画这一段]
+BODY ONLY of the rust hound: the chunky horizontal torso block, seen from the side/three-quarter.
+NO head, NO legs, NO tail, NO eyes, NO gear, NO pipe. Just the body block with its belly seam.
 
-### 3.6 怪物大图 Prompt 模板（monster_idle_S.png）
+[Pivot]
+The body rotates around its CENTER. Draw it centered in its cell, horizontal, level.
 
-```
-[CharacterLock —— 全文复用，一字不改]
-Rust Hound (锈蚀猎犬): chunky cartoon four-legged dog, big round glowing yellow eye, dark rust-brown flat fur (single flat tone, NO fur strands), one simple brass gear on the shoulder, one thin copper pipe on the back, stubby legs, curled wire tail. Only 5 parts. Dark gothic Don't Starve style: thick scratchy black ink outline, muted dark palette (dark rust, charcoal, aged brass), subtle cross-hatch shading. NO bright colors, NO realism, NO rivet arrays.
-
-[ViewLock —— Facing South, directly toward camera, 0°]
-Looking straight down. Hound stands in idle breathing pose, legs planted firmly.
-
-[Layout]
-One BIG image. 1 row × 6 columns of 512x512 cells.
-  [frame 1] [frame 2] [frame 3] [frame 4] [frame 5] [frame 6]
-All frames show THE SAME hound, same size, same pose variation.
+[Layout — 2×2 grid, thin light-gray separators, pure white background]
+  top-left = S (front view)  | top-right = E (facing right)
+  bottom-left = N (back)     | bottom-right = W (facing left)
 
 [CRITICAL]
-- Grid cells are 512x512 square. All cells same size.
-- Idle animation, 6 frames, loopable. Frame 1 is base pose, frame 3 is max breath-in, frame 6 returns to base but NOT identical to frame 1.
-- Same hound in all 6 frames. Same brass gears, same rust fur pattern, same glowing eyes.
-- All 6 frames share the SAME foot baseline Y coordinate.
-- Transparent background ONLY. NO numbered labels, NO text, NO watermarks, NO environment.
-- Keep the hound simple — no more than 5 distinct parts visible.
+- ONE body only per cell. Same body, same scale, same vertical position in all four cells.
+- In S/N the body is seen head-on (narrower silhouette); in E/W it is a long horizontal block.
+- NO text, NO numbers, NO shadows, NO ground, NO other parts.
 
-[MONSTER ALIGNMENT RULES — VIOLATE OR RE-DRAW]
-- Every frame lives in its own 512x512 grid cell.
-- IN EVERY SINGLE FRAME, the hound's ground-contact point (feet / leg bottoms / whatever part touches the floor) MUST land on EXACTLY pixel coordinate (256, 412) inside its cell.
-  (Grid top = 0, bottom = 512. 412 means 100px from grid bottom.)
-- Feet can lift during walk/attack — but the "landing point" (where feet would normally touch ground) must stay at (256, 412).
-- After you finish, if you cut out each 512x512 frame and stacked all 6 cutouts on top of each other with no offset,
-  all 6 hounds should appear to stand on the SAME horizontal floor — no frame floats, no frame sinks.
+[ALIGNMENT RULES]
+- Each cell is 512×512. The body's CENTER must land at exactly (256, 256) in every cell.
+- Cut out all four cells and stack them with no offset: the body must line up perfectly.
 ```
 
-### 3.7 怪物 Prompt 模板（monster_walk_S.png，参考 idle 第一帧）
+**四肢（`leg`，单张共用）追加段**：
 
 ```
-[CharacterLock —— 复用 monster_idle_S 的 CharacterLock 段，一字不改]
-[ViewLock —— 同上]
-[Layout —— 1 row × 8 columns of 512x512 cells]
-[CRITICAL —— 同上 + 以下新增]
-- THIS GENERATION USES monster_idle_S.png frame 1 as visual reference.
-- 8 frames walk animation, loopable. Front-left leg forward on frame 2, front-right leg forward on frame 6.
+- Draw ONE single leg only — NOT a pair, NOT four legs.
+- Upper end = pivot end: round joint ball / leather socket, aligned to the TOP-CENTER of the cell
+  (256, 100). Lower end = rounded hoof/paw.
+- The leg must read the same when mirrored horizontally: no left/right specific shape, no scars.
+- Same leg is reused for all four legs with horizontal mirroring — keep it symmetric.
+```
 
-[MONSTER ALIGNMENT RULES — SAME AS monster_idle_S]
-- Ground-contact point in every frame lands at (256, 412) in its cell.
-- Feet lift naturally during gait, but the reference ground point does not move up/down.
-- No frame floats, no frame sinks when all 8 frames are stacked at no offset.
+**头（`head`，4 方向）追加段**：
+
+```
+- HEAD ONLY — no neck stump, no body, no shoulders.
+- Bottom-center of the head (neck joint) must land at (256, 412) in every cell.
+- S = facing viewer, E = facing right (profile), N = back of head, W = facing left (profile).
+```
+
+### 3.7 生成流程（完整示例：`rust_hound` / `beast5`）
+
+```
+0. 选模板：beast5（body + 4 腿），附加件 head、tail
+1. GenerateImage → parts/body.png        （2×2 四方向，无参考，CharacterLock + PartLock(body)）
+2. GenerateImage → parts/head.png        （2×2，参考 parts/body.png 的 S 格）
+3. GenerateImage → parts/leg.png         （单张，2×2 也用同一造型的四格，或直接单格共用）
+4. GenerateImage → parts/tail.png        （可选，2×2）
+5. 脚本裁件 → public/assets/sprites/enemy/rust_hound/parts/{body,head,leg,tail}/
+6. 编辑器：新建工程 → 选模板 beast5 → 自动建 5 关节骨架 + 附加件
+7. K 帧：idle(2.0s loop) / walk(0.8s loop) / attack(0.6s once) / hit(0.4s once) / death(1.2s once)
+8. 导出 → public/animations/rust_hound_anim.json
 ```
 
 ---
@@ -375,15 +526,16 @@ python tools/build_sprites.py --mode character_head --in sprite_ani/heads/{char_
 # 装备（back/hat/foot = 4 方向大图；hand/weapon = 1 张图）
 python tools/build_sprites.py --mode equipment --in sprite_ani/equipment/{slot}/{item_id}/ --out public/assets/sprites/equipment/{slot}/{item_id}/ --grid 512
 
-# 敌人（一方向内 5 张大图 → 每动作每方向合成一条横向帧条带）
-python tools/build_sprites.py --mode monster --in sprite_ani/monsters/{mon_id}/ --out public/assets/sprites/enemy/{mon_id}/ --grid 512
+# 怪物部件（每部件一张 2×2 方向大图 → 裁成 parts/{slot}/{S,E,N,W}.png）
+python tools/build_sprites.py --mode monster_parts --in sprite_ani/monsters/{mon_id}/parts/ --out public/assets/sprites/enemy/{mon_id}/parts/ --template beast5 --grid 512
 ```
 
 脚本功能：
-1. 识别 `--mode`，读入 manifest 里的 `gridSize` 和布局参数
-2. 按网格裁出所有部件 / 帧，自动保存到 `public/assets/sprites/` 下的规范目录
-3. 自动计算 `footBaselineY`（对 4 方向角色身体，找 calf_L / calf_R 的脚底 Y 作为该方向统一 baseline）
-4. 自动生成/更新 `public/assets/sprites/manifest.json`（部件坐标、挂点、Z 层、帧列表）
+1. 识别 `--mode`，读入 manifest 里的 `gridSize` 和布局参数；怪物模式读 `templates.json` 的模板（关节 / 图像槽 / pivot / 布局）
+2. 按网格裁出所有部件，自动保存到 `public/assets/sprites/` 下的规范目录；同 `slot` 的多个关节只裁一份，其余复用
+3. 按 pivot 类型（top / bottom / center）把部件摆进 512 画布，脚底线统一 `FOOT_Y = 412`
+4. 自动计算 `footBaselineY`（角色：calf_L / calf_R 的脚底 Y；怪物：最低的腿部件脚底 Y）
+5. 自动生成/更新 `public/assets/sprites/manifest.json`（部件坐标、挂点、Z 层、模板 id）
 
 ---
 
@@ -399,8 +551,11 @@ sprite_ani/
 │   ├── S_big.png  E_big.png  N_big.png  W_big.png
 ├── heads/{char_id}/                    ← 每个角色的头 4 方向大图
 ├── equipment/{slot}/{item_id}/         ← 装备大图（slot ∈ back/hat/hand/foot）
-└── monsters/{mon_id}/                  ← 敌人大图
-    └── S/  idle.png walk.png attack.png hit.png death.png （E/N/W 同构）
+└── monsters/{mon_id}/                  ← 怪物部件大图
+    └── parts/
+        ├── body.png                    ← 每个部件一张 2×2 大图（S/E/N/W 四格）
+        ├── head.png
+        └── leg.png                     ← 成对肢体只画一份（镜像复用）
 ```
 
 ### 5.2 最终产物（`public/assets/sprites/`，强制）
@@ -436,22 +591,20 @@ public/assets/sprites/
 │       └── wrench/
 │           └── single.png
 │
-└── enemy/                              ← 敌人：一个敌人一个文件夹
+└── enemy/                              ← 怪物：一个怪物一个文件夹（纸娃娃部件）
     └── rust_hound/
-        ├── idle/                       ← 一个动作一个文件夹，内部按现在的来
-        │   ├── S.png  SE.png  E.png  NE.png  N.png  NW.png  W.png  SW.png
-        │   └── （每个 <DIR>.png 内部是该动作该方向的横向 N 帧条带，单元格 CELL×CELL）
-        ├── walk/
-        │   └── <DIR>.png ...
-        ├── attack/
-        ├── hit/
-        └── death/
+        └── parts/                       ← 按图像槽分文件夹
+            ├── body/   S.png  E.png  N.png  W.png
+            ├── head/   S.png  E.png  N.png  W.png
+            ├── leg/    single.png       ← 成对肢体：一张图 + 镜像复用
+            └── tail/   S.png  E.png  N.png  W.png
 ```
 
 要点：
 - `role/` 根目录下**只有公共部件（common/，4 根火柴棒）和各角色文件夹**；角色文件夹里**只有头部**，不出现身体部件。
 - `equipment/` 下**只有 back / hat / hand / foot / weapon 五个文件夹**，不存在其他类别；每个物品独立成文件夹。
-- `enemy/` 每个敌人独立文件夹，内部结构与现有运行时格式一致：`<动作>/<方向>.png` 横向帧条带。
+- `enemy/` 每个怪物独立文件夹，内部**只有 `parts/`**（每个图像槽一个子文件夹）；**不再有 `idle/`、`walk/` 帧条带**——动作由 `public/animations/{mon_id}_anim.json` 的关键帧描述。
+- 怪物动画 JSON 与角色动画 JSON 结构完全一致（`directions → clips → tracks`），引擎共用一套播放器。
 
 ---
 
@@ -517,15 +670,29 @@ public/assets/sprites/
   "enemies": [
     {
       "id": "rust_hound",
-      "path": "enemy/rust_hound",      // <动作>/<方向>.png 横向帧条带
-      "footBaselineByDirection": { "S": 410, "E": 412, "N": 410, "W": 410 },
-      "actions": {
-        "idle":   { "frames": 6, "fps": 8, "loop": true  },
-        "walk":   { "frames": 8, "fps": 14, "loop": true  },
-        "attack": { "frames": 5, "fps": 16, "loop": false },
-        "hit":    { "frames": 3, "fps": 20, "loop": false },
-        "death":  { "frames": 6, "fps": 10, "loop": false }
-      }
+      "template": "beast5",            // 骨架模板：humanoid10 / humanoid5 / beast5 / custom
+      "path": "enemy/rust_hound",
+      "animPath": "animations/rust_hound_anim.json",  // 关键帧动画（与角色同格式）
+      "footBaselineY": 412,            // 全方向统一脚底线
+      "parts": {
+        "body": { "dirs": { "S": "enemy/rust_hound/parts/body/S.png", "E": ".../E.png",
+                            "N": ".../N.png", "W": ".../W.png" }, "pivot": "center" },
+        "head": { "dirs": { "S": ".../head/S.png", "E": ".../E.png",
+                            "N": ".../N.png", "W": ".../W.png" }, "pivot": "bottom" },
+        "leg":  { "shared": true, "mirrored": true,
+                  "path": "enemy/rust_hound/parts/leg/single.png", "pivot": "top" },
+        "tail": { "dirs": { "S": ".../tail/S.png" }, "pivot": "top", "optional": true }
+      },
+      "layoutS": {                     // 与角色同格式：cx + bottom/top + h（512 画布）
+        "body":  { "cx": 256, "bottom": 300, "h": 130 },
+        "head":  { "cx": 256, "bottom": 168, "h": 90 },
+        "leg_FL": { "cx": 204, "bottom": 412, "h": 130 },
+        "leg_FR": { "cx": 308, "bottom": 412, "h": 130 },
+        "leg_BL": { "cx": 224, "bottom": 412, "h": 130 },
+        "leg_BR": { "cx": 288, "bottom": 412, "h": 130 },
+        "tail":  { "cx": 352, "bottom": 250, "h": 70 }
+      },
+      "zOrderS": ["tail", "leg_BL", "leg_BR", "body", "leg_FL", "leg_FR", "head"]
     }
   ]
 }
@@ -538,7 +705,7 @@ public/assets/sprites/
 | # | 类型 | 检查项 | 通过标准 |
 |---|------|--------|---------|
 | Q1 | 对齐 | 同一方向大图所有部件脚 baseline Y 差 ≤ 2px | 裁剪后所有部件叠到一起脚不飘 |
-| Q2 | 对齐 | 怪物同一方向 5 张大图脚 baseline 一致 | 攻击时怪不往上跳 |
+| Q2 | 对齐 | 怪物同方向所有部件脚 baseline Y 差 ≤ 2px（腿一律 `FOOT_Y=412`） | 走路时怪不飘、不陷地 |
 | Q3 | 对齐 | 装备 4 方向挂载点与角色身体挂点差 ≤ 2px | 帽子不飘、武器不入手 |
 | Q4 | 模型 | 前一方向 → 后一方向的参考链完整 | E 一定参考 S、N 一定参考 E |
 | Q5 | 模型 | 怪物零部件 ≤ 5 个 | 复杂度清单通过 |
@@ -547,14 +714,17 @@ public/assets/sprites/
 | Q8 | 网格 | 所有大图 `width % gridSize === 0 && height % gridSize === 0` | 脚被裁一半 |
 | Q9 | 网格 | 所有部件/帧图尺寸精确 = gridSize | 脚本裁剪无偏差 |
 | Q10 | 透明 | 裁剪后透明区无黑边、无纯白棋盘格残留 | 无白边 |
-| Q11 | 跨方向 | 跨方向怪物 idle 第 1 帧 SSIM ≥ 0.80 | S 和 E 的猎犬长得不像同一只 |
+| Q11 | 跨方向 | 同一部件 4 个方向格 SSIM ≥ 0.80（造型/配色一致，只有朝向不同） | S 和 E 的猎犬长得不像同一只 |
 | Q12 | 文字 | 图内无编号、无文字、无 watermark | OCR 检出 → 重绘 |
 | Q13 | 对称 | 角色身体左/上臂（及大腿/小腿）不对称元素（武器手侧）方向变化合理 | 持武器手在 S/SE/E 都在画面同一侧 |
 | Q14 | 装备 | hand/foot 装备的裁剪能**替换** forearm / calf 对应区域 | 不遮挡 head/neck/torso |
-| Q15 | 怪物 | 怪物一方向内 5 张大图完整产出，无缺失动作 | — |
-| Q16 | 怪物 | 怪物 attack 帧包含命中帧（通常第 3 帧） | 无攻击前摇后没出招 |
+| Q15 | 怪物 | 模板关节 + 附加件**无缺件**（beast5 = body/4 腿/head[/tail]） | 编辑器骨架不出现空节点 |
+| Q16 | 动作 | 5 个 clip 齐全，attack 命中关键帧落在 40–50% 处 | 有前摇无出招 / 只有 idle |
 | Q17 | 装备 | 每个 foot 格内**只有 1 只鞋**，每张 hand 图内**只有 1 只握拳手套** | 单只、无左右差异 |
 | Q18 | 装备 | back 的 S 图只有背带（无包体），E/N/W 只有包体（无背带） | 逐图核对，靠文件名不能验证 |
+| Q19 | 怪物 | 相邻部件在关节处**重叠 6–10px**，上段末端有关节球/铰链 | 旋转 ±45° 不露缝、不断肢 |
+| Q20 | 怪物 | 成对肢体（L/R、FL/FR/BL/BR）**只出一张图**且无左右特征 | 镜像后看不出左右 |
+| Q21 | 怪物 | 怪物动作以**关键帧 JSON** 交付（`animations/{mon_id}_anim.json`），编辑器可打开回放 | 仍交帧条带 → 打回 |
 
 ---
 
@@ -564,8 +734,8 @@ public/assets/sprites/
 |---|--------|------|
 | R1 | 方向顺序打乱（先 E 再 S） | 按 S→E→N→W 重走参考链 |
 | R2 | 生成后一方向时未传前一方向参考图 | 退回，补上参考 |
-| R3 | 怪物在同一方向里跳过某动作生成下一个方向 | 退回，补齐动作 |
-| R4 | 怪物零部件 > 5 个 | 简化，重画 |
+| R3 | 怪物仍出帧动画条带，或只出部件不做关键帧动作 | 退回：部件出图 + 编辑器 K 帧，交 `anim.json` |
+| R4 | 怪物部件数超过模板关节数（如 beast5 画了 6 条腿 / humanoid10 多画一套关节） | 按模板删减，重画 |
 | R5 | 四肢不是火柴棒（画成有体积的圆柱、带关节球、带手/脚） | 退回，改成一根直棒 + 圆头 |
 | R6 | 部件在网格里偏置（没居中） | 模型重画 |
 | R7 | 大图网格非正方形或网格尺寸不一致 | 重画 |
@@ -581,6 +751,10 @@ public/assets/sprites/
 | R17 | **手套张掌 / 五指分开 / 带拇指偏侧**，或画成一对 | 退回重画，永远**握拳**、单只、左右通用 |
 | R18 | 鞋子/手套带写实细节（鞋带孔、缝线、鞋底花纹、皮革纹理、指节分缝、指甲） | 退回，去掉细节，只保留大色块 + 厚描边 + 少量排线 |
 | R19 | 背包 E/N/W 方向画了背带，或 S 方向画了完整背包 | 退回：S 只出背带，E/N/W 只出包体（§2.1.2） |
+| R20 | 怪物画成**整只**（一张图里身体+头+腿全画上） | 退回：一图一部件，按模板拆件（§3.3） |
+| R21 | 5 关节模板擅自加肘/膝/腕（画成 2 段式肢体） | 退回：`humanoid5`/`beast5` 是一段式四肢；要关节请用 `humanoid10` 或 `custom` |
+| R22 | 部件图里带阴影、地面、或把两个部件混画在一起 | 退回重画：单件、无阴影、无地面 |
+| R23 | 关节端没做重叠/关节球，旋转后露缝断肢 | 退回：上段画关节球，下段探入 6–10px（§3.3） |
 
 ---
 
@@ -605,11 +779,18 @@ export const MIRRORED_SLOTS = new Set(['hand', 'foot'] as const);
 // 背包背带方向特例：S 方向只有背带，其余方向只有包体（§2.1.2）
 export const BACK_STRAP_ONLY_DIRS = new Set(['S'] as const);
 
-// 敌人动作顺序
+// 怪物动作顺序（与角色同名的 5 个 clip，均以关键帧驱动）
 export const MONSTER_ACTION_ORDER = ['idle', 'walk', 'attack', 'hit', 'death'] as const;
+
+// 骨架模板（怪物与角色共用；关节 / 图像槽 / pivot / 布局见 templates.json）
+export const SKELETON_TEMPLATES = ['humanoid10', 'humanoid5', 'beast5', 'custom'] as const;
+export const JOINT_COUNT = { humanoid10: 10, humanoid5: 5, beast5: 5 } as const;
+
+// 部件旋转轴：肢体绕顶端、躯干/头绕底端、兽身绕中心
+export type PivotKind = 'top' | 'bottom' | 'center' | 'left' | 'right'; // left/right：水平件（尾巴/武器）以根部为轴
 ```
 
-角色/装备/怪物 三种渲染组件在引擎里的结构（伪代码）：
+角色/装备/怪物 三种渲染组件在引擎里的结构（伪代码）。**怪物与角色共用同一套 `parts + clips`**：
 ```ts
 type Character = {
   head: { dir: DirKey, texture: THREE.Texture }        // 角色独有
@@ -621,8 +802,13 @@ type Character = {
 
 type Monster = {
   id: string
-  dirFrames: Record<DirKey, Record<ActionKey, THREE.Texture[]>> // 4 方向 × 5 动作 × N 帧
-  actionLoop: Partial<Record<ActionKey, boolean>>
-  footBaselineY: Record<DirKey, number>
+  template: 'humanoid10' | 'humanoid5' | 'beast5' | 'custom'
+  /** 静态骨架：与角色 PartDef 等价（id / parent / zIndex / texturePath / layout / pivot） */
+  parts: PartDef[]
+  /** 关键帧动画：与角色完全相同的 Clip 结构（4 方向 × 5 clip） */
+  clips: Record<DirKey, Record<ActionKey, Clip>>
+  footBaselineY: number
 }
 ```
+
+> 运行时只认 `parts + clips`，不关心这是"角色"还是"怪物"——两者走同一个组装器与播放器。

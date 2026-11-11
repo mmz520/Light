@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "name": "Dont Starve Steampunk",
+  "description": "类饥荒生存游戏工程。编辑器首页读取本文件定位世界与资产清单。",
+  "defaultWorld": "overworld",
+  "worlds": [
+    { "id": "overworld", "label": "荒野 · 锈原", "path": "content/worlds/overworld.json" }
+  ],
+  "schemas": {
+    "entityTypes": "content/schema/entity-types.json"
+  },
+  "indexes": {
+    "assets": "content/assets.index.json",
+    "animations": "content/animations.json"
+  },
+  "runtime": {
+    "spritesRoot": "assets/sprites",
+    "spriteManifest": "assets/sprites/manifest.json"
+  }
+}

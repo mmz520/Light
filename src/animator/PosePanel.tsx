@@ -119,8 +119,9 @@ export function PosePanel({
               <input type="number" step={0.05} min={0.05} value={round(pose.scaleY ?? 1, 3)}
                      onChange={e => onPoseChange('scaleY', Math.max(0.05, parseFloat(e.target.value) || 1))} style={INPUT} />
             </Field>
-            <Field label="zIndex">
+            <Field label="层级 zIndex">
               <input type="number" step={1} value={part.zIndex}
+                     title="节点贴图的渲染层级，数值大的画在上层"
                      onChange={e => onZIndexChange(parseInt(e.target.value, 10) || 0)} style={INPUT} />
             </Field>
           </div>
@@ -215,6 +216,25 @@ export function PosePanel({
                   <Field label="缩放 Y">
                     <input type="number" step={0.05} min={0.05} value={round(part.overlay.scaleY ?? 1, 3)}
                            onChange={e => onOverlayChange({ ...part.overlay!, scaleY: Math.max(0.05, parseFloat(e.target.value) || 1) })} style={INPUT} />
+                  </Field>
+                  <Field label="层级 zIndex">
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input
+                        type="number" step={0.1}
+                        title="覆盖贴图的渲染层级；留空/点“默认”则等于所属节点层级 + 0.1"
+                        value={part.overlay.zIndex ?? round(part.zIndex + 0.1, 1)}
+                        onChange={e => {
+                          const v = parseFloat(e.target.value);
+                          onOverlayChange({ ...part.overlay!, zIndex: Number.isFinite(v) ? v : undefined });
+                        }}
+                        style={{ ...INPUT, flex: 1, minWidth: 0 }}
+                      />
+                      <button
+                        title="恢复默认层级（节点 zIndex + 0.1）"
+                        onClick={() => onOverlayChange({ ...part.overlay!, zIndex: undefined })}
+                        style={{ ...SMALL_BTN, padding: '2px 8px', flexShrink: 0 }}
+                      >默认</button>
+                    </div>
                   </Field>
                 </div>
               </>

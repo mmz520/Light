@@ -25,6 +25,7 @@ import { PosePanel } from './PosePanel';
 import { ClipPanel } from './ClipPanel';
 import { LocalAnimModal } from './LocalAnimModal';
 import { LocalAnimPanel } from './LocalAnimPanel';
+import { useHistory } from './useHistory';
 
 /**
  * 部件骨架（v4 资源体系）
@@ -320,7 +321,10 @@ function alignParts(
 export function AnimatorStudio({ onBack }: { onBack: () => void }) {
   const [availablePaths, setAvailablePaths] = useState<Set<string>>(() => new Set());
   const [images, setImages] = useState<MetadataImage[]>([]);
-  const [project, setProject] = useState<AnimatorProject | null>(null);
+  // 工程数据：带撤销/重做历史（快捷键 + 顶部工具栏按钮）
+  const {
+    value: project, set: setProject, undo, redo, reset: resetProject, canUndo, canRedo, undoDepth, redoDepth,
+  } = useHistory<AnimatorProject>(null);
   const [activeDir, setActiveDir] = useState<DirTab>('S');
   const [activeClipName, setActiveClipName] = useState<string>('idle');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -379,7 +383,7 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
         }
       }
       if (!alive) return;
-      setProject(boot ?? newProject(m, paths));
+      resetProject(boot ?? newProject(m, paths));
       if (boot) setActiveClipName(prev => (boot!.directions[activeDir]?.clips[prev] ? prev : 'idle'));
     };
     load();
@@ -396,17 +400,32 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
     }
   }, [entry, activeClipName]);
 
-  // W/E/R 切换工具
+  // W/E/R 切换工具 + Ctrl+Z / Ctrl+Shift+Z（Ctrl+Y）撤销重做
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+      const el = e.target as HTMLElement | null;
+      const typing = !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+      // 输入框内交给浏览器原生撤销，避免打断文字编辑
+      if (typing) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        if (e.shiftKey) redo(); else undo();
+        return;
+      }
+      if (mod && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        redo();
+        return;
+      }
+      if (mod || e.altKey) return;
       if (e.key === 'w' || e.key === 'W') setTool('move');
       else if (e.key === 'e' || e.key === 'E') setTool('rotate');
       else if (e.key === 'r' || e.key === 'R') setTool('scale');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [undo, redo]);
 
   const projectRef = useRef(project);
   projectRef.current = project;
@@ -421,11 +440,13 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
         if (clipName) setActiveClipName(clipName);
         if (t !== undefined) { setIsPlaying(false); setCursorT(t); }
       },
+      // 自动化用：撤销 / 重做 + 栈深度
+      undo, redo, canUndo, canRedo, undoDepth, redoDepth,
     };
-  }, [project, activeDir, activeClipName, images]);
+  }, [project, activeDir, activeClipName, images, undo, redo, canUndo, canRedo, undoDepth, redoDepth]);
 
-  /** 更新当前方向某个 clip */
-  const updateClip = useCallback((name: string, mutator: (c: Clip) => Clip) => {
+  /** 更新当前方向某个 clip（mergeKey：同一手势内的连续写入合并为一步历史） */
+  const updateClip = useCallback((name: string, mutator: (c: Clip) => Clip, mergeKey?: string) => {
     setProject(p => {
       if (!p) return p;
       const dir = p.directions[activeDir];
@@ -433,11 +454,11 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
         ...p,
         directions: { ...p.directions, [activeDir]: { ...dir, clips: { ...dir.clips, [name]: mutator(dir.clips[name]) } } },
       };
-    });
-  }, [activeDir]);
+    }, mergeKey);
+  }, [activeDir, setProject]);
 
   /** 更新当前方向部件定义（贴图 / zIndex / 覆盖图） */
-  const updatePart = useCallback((partId: string, mut: (p: PartDef) => PartDef) => {
+  const updatePart = useCallback((partId: string, mut: (p: PartDef) => PartDef, mergeKey?: string) => {
     setProject(p => {
       if (!p) return p;
       const dir = p.directions[activeDir];
@@ -445,8 +466,8 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
         ...p,
         directions: { ...p.directions, [activeDir]: { ...dir, parts: dir.parts.map(x => (x.id === partId ? mut(x) : x)) } },
       };
-    });
-  }, [activeDir]);
+    }, mergeKey);
+  }, [activeDir, setProject]);
 
   /** 在活动 clip 的指定时间点为多个部件写关键帧 */
   const setKeyframesAt = useCallback((t: number, partPoses: Record<string, PartPose>) => {
@@ -462,7 +483,7 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
     }));
   }, [activeClipName, updateClip]);
 
-  /** 写单个部件在当前时间点的关键帧 */
+  /** 写单个部件在当前时间点的关键帧（同一部件连续写入合并为一步历史） */
   const writeKeyAt = useCallback((partId: string, pose: PartPose) => {
     updateClip(activeClipName, c => ({
       ...c,
@@ -473,7 +494,7 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
         keys.sort((a, b) => a.t - b.t);
         return { ...tr, keys };
       }),
-    }));
+    }), `pose:${partId}`);
   }, [activeClipName, cursorT, updateClip]);
 
   /** 记录显示/隐藏行为（合并进当前时间点关键帧） */
@@ -540,7 +561,7 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
         keys.sort((a, b) => a.t - b.t);
         return { ...tr, keys };
       }),
-    }));
+    }), `kf:${partId}`);
   }, [activeClipName, updateClip]);
 
   // —— 局部动画 CRUD（挂在当前 clip 上） ——
@@ -550,11 +571,11 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
     setSelectedLocalId(a.id);
   }, [activeClipName, updateClip]);
 
-  const updateLocalAnim = useCallback((id: string, mut: (a: LocalAnim) => LocalAnim) => {
+  const updateLocalAnim = useCallback((id: string, mut: (a: LocalAnim) => LocalAnim, mergeKey?: string) => {
     updateClip(activeClipName, c => ({
       ...c,
       localAnims: (c.localAnims ?? []).map(x => (x.id === id ? mut(x) : x)),
-    }));
+    }), mergeKey);
   }, [activeClipName, updateClip]);
 
   const deleteLocalAnim = useCallback((id: string) => {
@@ -567,7 +588,7 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
   }, [updateLocalAnim]);
 
   const moveLocalAnim = useCallback((id: string, newStart: number) => {
-    updateLocalAnim(id, a => ({ ...a, start: Math.max(0, Math.min(clip ? clip.duration : 0, newStart)) }));
+    updateLocalAnim(id, a => ({ ...a, start: Math.max(0, Math.min(clip ? clip.duration : 0, newStart)) }), `la:${id}`);
   }, [updateLocalAnim, clip]);
 
   /** 向关键帧型局部动画写入关键帧（局部时间 = cursorT − start，越界则不写） */
@@ -583,7 +604,7 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
       keys.push({ t, pose: { ...pose }, ease: 'linear' });
       keys.sort((k1, k2) => k1.t - k2.t);
       return { ...a, keys };
-    });
+    }, `lk:${id}`);
   }, [clip, cursorT, updateLocalAnim]);
 
   const moveLocalKey = useCallback((id: string, fromT: number, toT: number) => {
@@ -595,7 +616,7 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
       keys.push({ ...key, t: Math.max(0, Math.min(a.duration, toT)) });
       keys.sort((k1, k2) => k1.t - k2.t);
       return { ...a, keys };
-    });
+    }, `lk:${id}`);
   }, [updateLocalAnim]);
 
   const deleteLocalKey = useCallback((id: string, t: number) => {
@@ -755,6 +776,20 @@ export function AnimatorStudio({ onBack }: { onBack: () => void }) {
           {project.targetId} · {DIR_TABS.find(d => d.tab === activeDir)?.label}({activeDir})
         </span>
         <div style={{ flex: 1 }} />
+        <div style={{ display: 'flex', gap: 3 }}>
+          <button
+            onClick={undo}
+            disabled={!canUndo}
+            title="回退（Ctrl+Z）"
+            style={{ width: 30, padding: '4px 0', fontSize: 14, lineHeight: 1, opacity: canUndo ? 1 : .35, cursor: canUndo ? 'pointer' : 'default' }}
+          >↶</button>
+          <button
+            onClick={redo}
+            disabled={!canRedo}
+            title="前进（Ctrl+Shift+Z / Ctrl+Y）"
+            style={{ width: 30, padding: '4px 0', fontSize: 14, lineHeight: 1, opacity: canRedo ? 1 : .35, cursor: canRedo ? 'pointer' : 'default' }}
+          >↷</button>
+        </div>
         <button onClick={() => setKeyframesAt(cursorT, sampled.poses)}>◆ Add Key @ {cursorT.toFixed(2)}s</button>
         <button onClick={handleSave}>保存 JSON</button>
         <button onClick={handleLoad}>加载 JSON</button>

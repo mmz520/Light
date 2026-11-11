@@ -36,6 +36,7 @@ export function PartTree({ parts, selectedId, onSelect }: Props) {
     return (
       <div key={p.id}>
         <div
+          data-part-row={p.id}
           onClick={() => onSelect(p.id)}
           style={{
             padding: '4px 8px',
@@ -45,6 +46,7 @@ export function PartTree({ parts, selectedId, onSelect }: Props) {
             borderRadius: 4,
             userSelect: 'none',
             display: 'flex', alignItems: 'center', gap: 4,
+            whiteSpace: 'nowrap',
           }}
         >
           {/* 收起/展开箭头 */}
@@ -62,8 +64,8 @@ export function PartTree({ parts, selectedId, onSelect }: Props) {
             width: 8, height: 8, borderRadius: 2, flexShrink: 0,
             background: p.texturePath ? '#6cf' : '#666',
           }} title={p.texturePath ? '已设置贴图' : '未设置贴图'} />
-          <span>{p.label}</span>
-          <span style={{ opacity: .35, fontSize: 10 }}>{p.id}</span>
+          <span style={{ flexShrink: 0 }}>{p.label}</span>
+          <span style={{ opacity: .35, fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.id}</span>
           {p.overlay && <span style={{ fontSize: 9, color: '#6cf' }} title="有覆盖贴图">▣</span>}
         </div>
         {kids.map(k => renderNode(k, depth + 1))}

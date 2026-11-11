@@ -1,0 +1,667 @@
+{
+  "version": 1,
+  "canvas": 512,
+  "anchorFootY": 412,
+  "anchorTopY": 100,
+  "anchorCenter": 256,
+  "dirs": [
+    "S",
+    "E",
+    "N",
+    "W"
+  ],
+  "note": "骨架模板：角色与怪物共用。joints = 参与关键帧的关节；attachments = 挂在关节上的附加件（头/尾/装备），不计入关节数。layout 为 512 画布内 S 方向的摆放（cx + bottom/top + h，px），四方向共用。pivot: top=绕顶端(肩/髋/膝)，bottom=绕底端(腰/颈)，center=绕中心。",
+  "templates": [
+    {
+      "id": "humanoid10",
+      "name": "10 关节人形",
+      "kind": "humanoid",
+      "jointCount": 10,
+      "usage": "与当前角色同款骨架；人形怪、精英怪、BOSS",
+      "imageSlots": {
+        "torso_L": {
+          "images": "single"
+        },
+        "torso_U": {
+          "images": "single"
+        },
+        "arm": {
+          "images": "single",
+          "mirrored": true,
+          "note": "上臂与前臂共用，前臂缩放 0.85"
+        },
+        "leg": {
+          "images": "single",
+          "mirrored": true,
+          "note": "大腿与小腿共用，小腿缩放 0.85"
+        },
+        "head": {
+          "images": "4dir"
+        }
+      },
+      "joints": [
+        {
+          "id": "thigh_L",
+          "parent": "torso_L",
+          "slot": "leg",
+          "pivot": "top",
+          "mirror": false,
+          "layout": {
+            "cx": 232,
+            "bottom": 344,
+            "h": 90
+          },
+          "z": 1
+        },
+        {
+          "id": "thigh_R",
+          "parent": "torso_L",
+          "slot": "leg",
+          "pivot": "top",
+          "mirrorOf": "thigh_L",
+          "layout": {
+            "cx": 280,
+            "bottom": 344,
+            "h": 90
+          },
+          "z": 2
+        },
+        {
+          "id": "calf_L",
+          "parent": "thigh_L",
+          "slot": "leg",
+          "pivot": "top",
+          "scale": 0.85,
+          "layout": {
+            "cx": 232,
+            "bottom": 412,
+            "h": 76
+          },
+          "z": 3
+        },
+        {
+          "id": "calf_R",
+          "parent": "thigh_R",
+          "slot": "leg",
+          "pivot": "top",
+          "mirrorOf": "calf_L",
+          "scale": 0.85,
+          "layout": {
+            "cx": 280,
+            "bottom": 412,
+            "h": 76
+          },
+          "z": 4
+        },
+        {
+          "id": "torso_L",
+          "parent": null,
+          "slot": "torso_L",
+          "pivot": "bottom",
+          "layout": {
+            "cx": 256,
+            "bottom": 262,
+            "h": 60
+          },
+          "z": 5
+        },
+        {
+          "id": "torso_U",
+          "parent": "torso_L",
+          "slot": "torso_U",
+          "pivot": "bottom",
+          "layout": {
+            "cx": 256,
+            "bottom": 212,
+            "h": 70
+          },
+          "z": 6
+        },
+        {
+          "id": "upper_arm_L",
+          "parent": "torso_U",
+          "slot": "arm",
+          "pivot": "top",
+          "layout": {
+            "cx": 218,
+            "top": 160,
+            "h": 75
+          },
+          "z": 8
+        },
+        {
+          "id": "upper_arm_R",
+          "parent": "torso_U",
+          "slot": "arm",
+          "pivot": "top",
+          "mirrorOf": "upper_arm_L",
+          "layout": {
+            "cx": 294,
+            "top": 160,
+            "h": 75
+          },
+          "z": 9
+        },
+        {
+          "id": "forearm_L",
+          "parent": "upper_arm_L",
+          "slot": "arm",
+          "pivot": "top",
+          "scale": 0.85,
+          "layout": {
+            "cx": 218,
+            "top": 225,
+            "h": 64
+          },
+          "z": 10
+        },
+        {
+          "id": "forearm_R",
+          "parent": "upper_arm_R",
+          "slot": "arm",
+          "pivot": "top",
+          "mirrorOf": "forearm_L",
+          "scale": 0.85,
+          "layout": {
+            "cx": 294,
+            "top": 225,
+            "h": 64
+          },
+          "z": 11
+        }
+      ],
+      "attachments": [
+        {
+          "id": "back",
+          "parent": "torso_U",
+          "slot": "back",
+          "pivot": "bottom",
+          "equipment": true,
+          "layout": {
+            "cx": 256,
+            "bottom": 272,
+            "h": 100
+          },
+          "z": 7
+        },
+        {
+          "id": "foot_L",
+          "parent": "calf_L",
+          "slot": "foot",
+          "pivot": "bottom",
+          "equipment": true,
+          "layout": {
+            "cx": 232,
+            "bottom": 412,
+            "h": 50
+          },
+          "z": 12
+        },
+        {
+          "id": "foot_R",
+          "parent": "calf_R",
+          "slot": "foot",
+          "pivot": "bottom",
+          "equipment": true,
+          "mirrorOf": "foot_L",
+          "layout": {
+            "cx": 280,
+            "bottom": 412,
+            "h": 50
+          },
+          "z": 13
+        },
+        {
+          "id": "hand_L",
+          "parent": "forearm_L",
+          "slot": "hand",
+          "pivot": "bottom",
+          "equipment": true,
+          "layout": {
+            "cx": 218,
+            "bottom": 293,
+            "h": 44
+          },
+          "z": 14
+        },
+        {
+          "id": "hand_R",
+          "parent": "forearm_R",
+          "slot": "hand",
+          "pivot": "bottom",
+          "equipment": true,
+          "mirrorOf": "hand_L",
+          "layout": {
+            "cx": 294,
+            "bottom": 293,
+            "h": 44
+          },
+          "z": 15
+        },
+        {
+          "id": "head",
+          "parent": "torso_U",
+          "slot": "head",
+          "pivot": "bottom",
+          "layout": {
+            "cx": 256,
+            "bottom": 150,
+            "h": 110
+          },
+          "z": 16
+        },
+        {
+          "id": "hat",
+          "parent": "head",
+          "slot": "hat",
+          "pivot": "bottom",
+          "equipment": true,
+          "layout": {
+            "cx": 256,
+            "bottom": 74,
+            "h": 50
+          },
+          "z": 17
+        },
+        {
+          "id": "weapon",
+          "parent": "forearm_R",
+          "slot": "weapon",
+          "pivot": "bottom",
+          "equipment": true,
+          "layout": {
+            "cx": 302,
+            "bottom": 291,
+            "h": 95
+          },
+          "z": 18
+        }
+      ]
+    },
+    {
+      "id": "humanoid5",
+      "name": "5 关节人形",
+      "kind": "humanoid",
+      "jointCount": 5,
+      "usage": "小体量人形小怪，一段式四肢（无肘/膝）",
+      "imageSlots": {
+        "body": {
+          "images": "4dir"
+        },
+        "arm": {
+          "images": "single",
+          "mirrored": true
+        },
+        "leg": {
+          "images": "single",
+          "mirrored": true
+        },
+        "head": {
+          "images": "4dir"
+        }
+      },
+      "joints": [
+        {
+          "id": "leg_L",
+          "parent": "body",
+          "slot": "leg",
+          "pivot": "top",
+          "layout": {
+            "cx": 232,
+            "bottom": 412,
+            "h": 150
+          },
+          "z": 1
+        },
+        {
+          "id": "leg_R",
+          "parent": "body",
+          "slot": "leg",
+          "pivot": "top",
+          "mirrorOf": "leg_L",
+          "layout": {
+            "cx": 280,
+            "bottom": 412,
+            "h": 150
+          },
+          "z": 2
+        },
+        {
+          "id": "body",
+          "parent": null,
+          "slot": "body",
+          "pivot": "bottom",
+          "layout": {
+            "cx": 256,
+            "bottom": 262,
+            "h": 140
+          },
+          "z": 3
+        },
+        {
+          "id": "arm_L",
+          "parent": "body",
+          "slot": "arm",
+          "pivot": "top",
+          "layout": {
+            "cx": 214,
+            "top": 140,
+            "h": 130
+          },
+          "z": 4
+        },
+        {
+          "id": "arm_R",
+          "parent": "body",
+          "slot": "arm",
+          "pivot": "top",
+          "mirrorOf": "arm_L",
+          "layout": {
+            "cx": 298,
+            "top": 140,
+            "h": 130
+          },
+          "z": 5
+        }
+      ],
+      "attachments": [
+        {
+          "id": "head",
+          "parent": "body",
+          "slot": "head",
+          "pivot": "bottom",
+          "layout": {
+            "cx": 256,
+            "bottom": 118,
+            "h": 100
+          },
+          "z": 6
+        },
+        {
+          "id": "hat",
+          "parent": "head",
+          "slot": "hat",
+          "pivot": "bottom",
+          "equipment": true,
+          "layout": {
+            "cx": 256,
+            "bottom": 58,
+            "h": 50
+          },
+          "z": 7
+        },
+        {
+          "id": "hand_L",
+          "parent": "arm_L",
+          "slot": "hand",
+          "pivot": "bottom",
+          "equipment": true,
+          "layout": {
+            "cx": 214,
+            "bottom": 272,
+            "h": 44
+          },
+          "z": 8
+        },
+        {
+          "id": "hand_R",
+          "parent": "arm_R",
+          "slot": "hand",
+          "pivot": "bottom",
+          "equipment": true,
+          "mirrorOf": "hand_L",
+          "layout": {
+            "cx": 298,
+            "bottom": 272,
+            "h": 44
+          },
+          "z": 9
+        },
+        {
+          "id": "weapon",
+          "parent": "arm_R",
+          "slot": "weapon",
+          "pivot": "bottom",
+          "equipment": true,
+          "layout": {
+            "cx": 306,
+            "bottom": 270,
+            "h": 95
+          },
+          "z": 10
+        }
+      ]
+    },
+    {
+      "id": "beast5",
+      "name": "5 关节兽形",
+      "kind": "beast",
+      "jointCount": 5,
+      "usage": "四足兽（犬/猪/虫），一段式四腿",
+      "imageSlots": {
+        "body": {
+          "images": "4dir"
+        },
+        "head": {
+          "images": "4dir"
+        },
+        "leg": {
+          "images": "single",
+          "mirrored": true,
+          "note": "四条腿共用一张图，前后腿只是 z 与 cx 不同"
+        },
+        "tail": {
+          "images": "4dir",
+          "optional": true
+        }
+      },
+      "joints": [
+        {
+          "id": "leg_BL",
+          "parent": "body",
+          "slot": "leg",
+          "pivot": "top",
+          "layout": {
+            "cx": 224,
+            "bottom": 412,
+            "h": 130
+          },
+          "z": 1
+        },
+        {
+          "id": "leg_BR",
+          "parent": "body",
+          "slot": "leg",
+          "pivot": "top",
+          "mirrorOf": "leg_BL",
+          "layout": {
+            "cx": 288,
+            "bottom": 412,
+            "h": 130
+          },
+          "z": 2
+        },
+        {
+          "id": "body",
+          "parent": null,
+          "slot": "body",
+          "pivot": "center",
+          "layout": {
+            "cx": 256,
+            "bottom": 300,
+            "h": 130
+          },
+          "z": 3
+        },
+        {
+          "id": "leg_FL",
+          "parent": "body",
+          "slot": "leg",
+          "pivot": "top",
+          "layout": {
+            "cx": 204,
+            "bottom": 412,
+            "h": 130
+          },
+          "z": 4
+        },
+        {
+          "id": "leg_FR",
+          "parent": "body",
+          "slot": "leg",
+          "pivot": "top",
+          "mirrorOf": "leg_FL",
+          "layout": {
+            "cx": 308,
+            "bottom": 412,
+            "h": 130
+          },
+          "z": 5
+        }
+      ],
+      "attachments": [
+        {
+          "id": "tail",
+          "parent": "body",
+          "slot": "tail",
+          "pivot": "left",
+          "optional": true,
+          "layout": {
+            "cx": 330,
+            "bottom": 250,
+            "h": 70
+          },
+          "z": 0
+        },
+        {
+          "id": "head",
+          "parent": "body",
+          "slot": "head",
+          "pivot": "bottom",
+          "layout": {
+            "cx": 256,
+            "bottom": 168,
+            "h": 90
+          },
+          "z": 6
+        }
+      ]
+    },
+    {
+      "id": "custom",
+      "name": "自定义",
+      "kind": "custom",
+      "jointCount": null,
+      "usage": "多足、浮空、机械体、触手等特殊怪；关节与布局完全由使用者给出",
+      "imageSlots": {},
+      "joints": [],
+      "attachments": [],
+      "schema": {
+        "joint": {
+          "id": "string（唯一，编辑器节点 id）",
+          "parent": "string | null（根关节为 null）",
+          "slot": "string（图像槽 = parts/{slot}/ 目录名；同 slot 共图）",
+          "pivot": "top | bottom | center",
+          "mirrorOf": "string?（可选，声明该节点由另一节点水平镜像复用贴图）",
+          "optional": "boolean?（可选，缺件时不报错）",
+          "scale": "number?（可选，共用图的缩放系数）",
+          "layout": {
+            "cx": "number",
+            "bottom": "number | top: number",
+            "h": "number"
+          },
+          "z": "number（渲染层级，大的在上）"
+        }
+      },
+      "example": {
+        "id": "custom_tentacle",
+        "name": "自定义示例：三节触手怪",
+        "kind": "custom",
+        "joints": [
+          {
+            "id": "body",
+            "parent": null,
+            "slot": "body",
+            "pivot": "bottom",
+            "layout": {
+              "cx": 256,
+              "bottom": 300,
+              "h": 120
+            },
+            "z": 1
+          },
+          {
+            "id": "tail1",
+            "parent": "body",
+            "slot": "tail",
+            "pivot": "top",
+            "layout": {
+              "cx": 320,
+              "top": 210,
+              "h": 80
+            },
+            "z": 0
+          },
+          {
+            "id": "tail2",
+            "parent": "tail1",
+            "slot": "tail",
+            "pivot": "top",
+            "layout": {
+              "cx": 372,
+              "top": 268,
+              "h": 70
+            },
+            "z": -1
+          }
+        ],
+        "attachments": [
+          {
+            "id": "head",
+            "parent": "body",
+            "slot": "head",
+            "pivot": "bottom",
+            "layout": {
+              "cx": 256,
+              "bottom": 170,
+              "h": 90
+            },
+            "z": 2
+          }
+        ]
+      }
+    }
+  ],
+  "clips": [
+    {
+      "name": "idle",
+      "duration": 2.0,
+      "loop": "loop",
+      "notes": "呼吸起伏，首尾可无缝循环"
+    },
+    {
+      "name": "walk",
+      "duration": 0.8,
+      "loop": "loop",
+      "notes": "四足对角步 / 人形左右交替，身体上下 3–5px"
+    },
+    {
+      "name": "attack",
+      "duration": 0.6,
+      "loop": "once",
+      "notes": "蓄力→命中(40–50%)→收招"
+    },
+    {
+      "name": "hit",
+      "duration": 0.4,
+      "loop": "once",
+      "notes": "后仰+后退，末帧回弹过冲"
+    },
+    {
+      "name": "death",
+      "duration": 1.2,
+      "loop": "once",
+      "notes": "失去支撑→倒地→回弹→贴地静止"
+    }
+  ]
+}

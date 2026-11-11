@@ -1,0 +1,140 @@
+{
+  "version": 1,
+  "id": "overworld",
+  "name": "荒野 · 锈原",
+  "grid": { "cellSize": 1, "width": 64, "height": 64 },
+  "environment": {
+    "biome": "rustfield",
+    "timeOfDay": 0.35,
+    "fog": true,
+    "ambientColor": "#3a3a2e"
+  },
+  "entities": [
+    {
+      "id": "ent_player_1",
+      "type": "player",
+      "name": "工程师",
+      "x": 0,
+      "z": 2,
+      "rot": 180,
+      "props": { "character": "engineer_spanner", "hp": 100, "maxHp": 100, "speed": 4.2 }
+    },
+    {
+      "id": "ent_spawn_1",
+      "type": "spawn",
+      "name": "出生点",
+      "x": 0,
+      "z": 4,
+      "rot": 0,
+      "props": { "radius": 2.5 }
+    },
+    {
+      "id": "ent_campfire_1",
+      "type": "campfire",
+      "name": "篝火",
+      "x": 3.5,
+      "z": 0.5,
+      "rot": 0,
+      "props": { "lit": true, "fuel": 82, "lightRadius": 5.5, "lightColor": "#ffb144" }
+    },
+    {
+      "id": "ent_workbench_1",
+      "type": "workbench",
+      "name": "工作台",
+      "x": -3.5,
+      "z": 1,
+      "rot": 0,
+      "props": { "tier": 1, "durability": 100 }
+    },
+    {
+      "id": "ent_tree_1",
+      "type": "tree",
+      "name": "锈皮树",
+      "x": -7,
+      "z": -3,
+      "rot": 20,
+      "props": { "size": "medium", "resource": 3, "regrow": true }
+    },
+    {
+      "id": "ent_tree_2",
+      "type": "tree",
+      "name": "锈皮树",
+      "x": -9.5,
+      "z": 1.5,
+      "rot": 75,
+      "props": { "size": "large", "resource": 4, "regrow": true }
+    },
+    {
+      "id": "ent_tree_3",
+      "type": "tree",
+      "name": "枯树",
+      "x": 7.5,
+      "z": -4.5,
+      "rot": 140,
+      "props": { "size": "small", "resource": 1, "regrow": false }
+    },
+    {
+      "id": "ent_tree_4",
+      "type": "tree",
+      "name": "锈皮树",
+      "x": 10,
+      "z": 2.5,
+      "rot": 200,
+      "props": { "size": "medium", "resource": 3, "regrow": true }
+    },
+    {
+      "id": "ent_rock_1",
+      "type": "rock",
+      "name": "燧石矿",
+      "x": 5,
+      "z": -7,
+      "rot": 0,
+      "props": { "resource": 5, "hardness": 2 }
+    },
+    {
+      "id": "ent_rock_2",
+      "type": "rock",
+      "name": "巨石",
+      "x": -5.5,
+      "z": -7.5,
+      "rot": 45,
+      "props": { "resource": 8, "hardness": 4 }
+    },
+    {
+      "id": "ent_bush_1",
+      "type": "berry_bush",
+      "name": "浆果丛",
+      "x": 2,
+      "z": -10,
+      "rot": 0,
+      "props": { "berries": 3, "maxBerries": 3, "regrowDays": 3 }
+    },
+    {
+      "id": "ent_bush_2",
+      "type": "berry_bush",
+      "name": "浆果丛",
+      "x": -2.5,
+      "z": -11,
+      "rot": 0,
+      "props": { "berries": 1, "maxBerries": 3, "regrowDays": 3 }
+    },
+    {
+      "id": "ent_hound_1",
+      "type": "hound",
+      "name": "锈蚀猎犬",
+      "x": 13,
+      "z": -8,
+      "rot": 250,
+      "props": { "hp": 60, "damage": 12, "speed": 5.5, "aggroRange": 9 }
+    },
+    {
+      "id": "ent_hound_2",
+      "type": "hound",
+      "name": "锈蚀猎犬",
+      "x": 15.5,
+      "z": -6,
+      "rot": 265,
+      "props": { "hp": 60, "damage": 12, "speed": 5.5, "aggroRange": 9 }
+    }
+  ]
+}

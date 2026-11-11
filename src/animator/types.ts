@@ -169,6 +169,8 @@ export function sampleLocalAnims(clip: Clip, t: number): LocalSampleResult {
 export interface OverlayDef {
   /** 覆盖图片路径（相对 public/，来自 metadata.json） */
   texturePath: string;
+  /** 纯色（texturePath 为空时渲染成色块，与贴图互斥） */
+  textureColor?: string | null;
   /** 相对节点的偏移 */
   offsetX: number;
   offsetY: number;
@@ -184,6 +186,13 @@ export interface OverlayDef {
   /** X / Y 轴附加缩放（乘在 scale 上，缺省 1） */
   scaleX?: number;
   scaleY?: number;
+  /** 贴图裁剪（UV，原点左下）；null/缺省 = 整图 */
+  textureRect?: { u: number; v: number; w: number; h: number } | null;
+  /**
+   * 渲染层级（数值大的画在上层）。
+   * 缺省 = 所属节点 zIndex + 0.1（即压在节点贴图之上，但在更高层节点之下）。
+   */
+  zIndex?: number;
 }
 
 /** 一个角色/怪物的完整动画项目 */
@@ -256,6 +265,8 @@ export interface PartDef {
   parent: string | null;
   /** 贴图路径（相对 public/，来自 manifest；空 = 用占位块） */
   texturePath: string;
+  /** 纯色（texturePath 为空时渲染成色块，与贴图互斥） */
+  color?: string | null;
   /** 视口内占位/贴图的基准边长（世界单位；无 layout 时使用） */
   size?: number;
   /** 基准布局（世界单位）；null/缺省 = 旧版整幅画布模式 */
@@ -266,6 +277,10 @@ export interface PartDef {
   zIndex: number;
   /** 节点"贴图"覆盖物（可选） */
   overlay?: OverlayDef | null;
+  /** 左右镜像绘制（左右侧共用一张图时翻转） */
+  mirror?: boolean;
+  /** 贴图裁剪（UV，原点左下）；null/缺省 = 整图 */
+  textureRect?: { u: number; v: number; w: number; h: number } | null;
 }
 
 /* ---------------- public/assets/sprites/manifest.json（v4 资源清单） ---------------- */

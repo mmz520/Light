@@ -4,3 +4,6 @@ dist/
 .DS_Store
 /.vite/
 _cell_tmp.png
+dist-electron/
+release/
+.verify/
