@@ -19,6 +19,7 @@
 - 桌面端所有本地图片统一走 `gameasset://local/?p=<absPath>` 协议；裁剪参数 `?c=x,y,w,h`（原图像素）下沉在 `electron/lib/protocol.ts` 用 `nativeImage.crop()` 处理。CSS（background/border-image）与 three 自定义 uniform sampler（地皮 uT0~uT6）都能覆盖；three 自带的 `texture.offset/repeat` 只对材质内置 map 槽生效，对自定义 sampler 完全无效。
 - 虚拟目录只是 metadata.json 里的名称字段，磁盘上不建目录。
 - `window.__editor` = store 本体，`window.__editorUi` = UI 驱动句柄（openAnimation / openStateMachine / closeWindows / select ...），供 electron/lib/verify.ts 自检脚本驱动。
+- **git push 必须绕开环境里注入的代理**（`HTTP_PROXY/HTTPS_PROXY=http://127.0.0.1:<port>` 会返回 `Empty reply` / `CONNECT tunnel failed, response 502`）。正确写法：`env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy git push origin main`。同理 `npm install` 也要清代理并显式 `--registry=https://registry.npmjs.org/`（本机 npmmirror 直连不通）。
 
 ## 记忆索引
 
