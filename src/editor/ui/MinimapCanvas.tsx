@@ -136,6 +136,7 @@ export function MinimapCanvas({
   px,
   span,
   getCenter,
+  getPos,
 }: {
   project: ProjectDoc;
   px: number;
@@ -143,6 +144,8 @@ export function MinimapCanvas({
   span?: number | null;
   /** 每帧取镜头中心（角色实时位置）；null = 用全景或静态中心 */
   getCenter?: (() => { x: number; z: number } | null) | null;
+  /** 每帧取某个节点的实时位置（播放中物体在动）；返回 null = 用节点上的静态位置 */
+  getPos?: ((nodeId: string) => { x: number; z: number } | null) | null;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   // 工程数据（地皮包围盒 + 实体列表）随 project 缓存，rAF 循环里只读
@@ -153,6 +156,10 @@ export function MinimapCanvas({
   });
   const centerFnRef = useRef(getCenter);
   centerFnRef.current = getCenter;
+  const posFnRef = useRef(getPos);
+  posFnRef.current = getPos;
+  /** 需要逐帧重画吗（跟镜头 / 有物体会动）；否则只画一次 */
+  const live = !!getCenter || !!getPos;
   // 图组 id → 预览图 URL（小地图图标用；project 变才重算）
   const texUrlRef = useRef<Map<string, string>>(new Map());
 
@@ -224,8 +231,12 @@ export function MinimapCanvas({
       for (const n of nodes) {
         if (n.kind === 'ground' || n.kind === 'group' || n.kind === 'mapui' || n.kind === 'time' || n.kind === 'weather') continue;
         if (n.minimapShow === false) continue;
-        const mx = ox + n.x * scale;
-        const my = oz + n.z * scale;
+        // 播放中物体可能在动：位置优先取实时值（场景数据里的 x/z 只是出生点，运行时不写回工程）
+        const live = posFnRef.current?.(n.id) ?? null;
+        const nx = live ? live.x : n.x;
+        const nz = live ? live.z : n.z;
+        const mx = ox + nx * scale;
+        const my = oz + nz * scale;
         const r = (n.kind === 'character' ? 3.2 : 2.4) * dpr;
         const iconUrl = n.minimapIcon ? texUrlRef.current.get(n.minimapIcon) ?? '' : '';
         const img = iconUrl ? getIconImage(iconUrl, () => draw(center)) : null;
@@ -237,8 +248,8 @@ export function MinimapCanvas({
       }
     };
 
-    // 有 getCenter（跟随角色）：rAF 每帧重画；否则只画一遍
-    if (centerFnRef.current) {
+    // 有 getCenter（跟随角色）/ getPos（物体在动）：rAF 每帧重画；否则只画一遍
+    if (live) {
       let raf = 0;
       const loop = () => {
         draw(centerFnRef.current ? centerFnRef.current() : null);
@@ -248,7 +259,7 @@ export function MinimapCanvas({
       return () => cancelAnimationFrame(raf);
     }
     draw(null);
-  }, [project, px, span, nodes]);
+  }, [project, px, span, nodes, live]);
 
   return <canvas ref={ref} data-mapui-canvas="" style={{ width: px, height: px, display: 'block' }} />;
 }

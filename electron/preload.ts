@@ -5,6 +5,8 @@ import { CH } from '../src/shared/ipc';
 import type {
   DeskBridge,
   DeskResult,
+  EditorWindowInitPayload,
+  EditorWindowRef,
   ListOptions,
   MenuAction,
   MessageBoxOptions,
@@ -96,6 +98,29 @@ const bridge: DeskBridge = {
   watch: {
     start: (root: string, opts?: WatchOptions) => invoke<string>(CH.watchStart, root, opts),
     stop: (id: string) => invoke<void>(CH.watchStop, id),
+  },
+
+  editorWindow: {
+    open: (opts) => invoke(CH.editorWinOpen, opts),
+    close: (ref) => invoke(CH.editorWinClose, ref),
+    closeAll: () => invoke(CH.editorWinCloseAll),
+    ready: (ref) => invoke(CH.editorWinReady, ref),
+    pushDoc: (project) => invoke(CH.editorWinDoc, project),
+    onInit: (cb) => {
+      const listener = (_e: unknown, payload: EditorWindowInitPayload) => cb(payload);
+      ipcRenderer.on(CH.editorWinInit, listener);
+      return () => ipcRenderer.off(CH.editorWinInit, listener);
+    },
+    onDoc: (cb) => {
+      const listener = (_e: unknown, payload: unknown) => cb(payload);
+      ipcRenderer.on(CH.editorWinDoc, listener);
+      return () => ipcRenderer.off(CH.editorWinDoc, listener);
+    },
+    onClosed: (cb) => {
+      const listener = (_e: unknown, payload: EditorWindowRef) => cb(payload);
+      ipcRenderer.on(CH.editorWinClosed, listener);
+      return () => ipcRenderer.off(CH.editorWinClosed, listener);
+    },
   },
 
   window: {

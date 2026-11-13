@@ -14,6 +14,9 @@ import { MAPUI_RANGE_STEPS, sceneKindMeta, SCENE_KINDS, type ProjectDoc, type Sc
 import { mapuiDecorUrl } from '../model/resolve';
 import { SceneRuntime } from '../../runtime/sceneRuntime';
 import { ScriptVM } from '../../runtime/scripts';
+import { anchorPositionOf, attachViewportScene, setCameraRig } from '../model/componentHost';
+import { ComponentRuntime } from '../model/componentRuntime';
+import type { CameraRig } from '../../runtime/component';
 import { CharacterSprite } from './CharacterSprite';
 import { PromptDialog } from './Dialogs';
 import { MinimapCanvas } from './MinimapCanvas';
@@ -58,12 +61,15 @@ export function SceneView({ project, selectedId, onRenameScene }: Props) {
   /** 正被脚本拖拽悬停的对象（视口里的标记） */
   const [scriptHotNode, setScriptHotNode] = useState<string | null>(null);
   /** 运行时的状态摘要（每 150ms 采一次，用来显示「行走 · x,z」） */
-  const [hud, setHud] = useState<{ state: string; x: number; z: number; scriptLog: string | null } | null>(null);
+  const [hud, setHud] = useState<{ state: string; x: number; z: number; scriptLog: string | null; pitchDeg: number; claimed: boolean } | null>(null);
 
   const playingRef = useRef(false);
   playingRef.current = playing;
   const charWrapRef = useRef<HTMLDivElement>(null);
   const runtimeRef = useRef<SceneRuntime | null>(null);
+  /** 播放态的组件脚本运行时（onStart / onUpdate / onEvent） */
+  const componentRuntimeRef = useRef<ComponentRuntime | null>(null);
+  if (!componentRuntimeRef.current) componentRuntimeRef.current = new ComponentRuntime();
 
   /** 角色运行时：编辑态也建一个（静态站在节点位置），播放时才逐帧推进 */
   const runtime = useMemo(() => {
@@ -72,6 +78,18 @@ export function SceneView({ project, selectedId, onRenameScene }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project]);
   runtimeRef.current = runtime;
+
+  /**
+   * 播放中的实时位置（小地图标记用）：
+   * 角色走的是运行时状态（位置不写回工程），其它对象取三维锚点的实际位置（脚本可能挪过它）。
+   * 编辑态返回 null → 小地图用节点上的静态 x/z。
+   */
+  const liveNodePos = (nodeId: string): { x: number; z: number } | null => {
+    if (!playingRef.current) return null;
+    const rt = runtimeRef.current;
+    if (rt && rt.state.nodeId === nodeId) return { x: rt.state.x, z: rt.state.z };
+    return anchorPositionOf(nodeId);
+  };
 
   /* 脚本 VM：随工程创建（异步加载 wasm），随工程切换销毁 */
   useEffect(() => {
@@ -150,6 +168,8 @@ export function SceneView({ project, selectedId, onRenameScene }: Props) {
 
     const scene = new THREE.Scene();
     sceneRef.current = scene;
+    // 组件脚本可以通过 this.scene / this.three 直接操作这个场景
+    attachViewportScene(scene);
     scene.fog = new THREE.Fog(0x100d0a, 42, 150);
 
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
@@ -175,6 +195,20 @@ export function SceneView({ project, selectedId, onRenameScene }: Props) {
 
     const view = { dist: 17, yaw: Math.PI / 4, pitch: 0.62 };
     const target = new THREE.Vector3(0, 0.5, 0);
+
+    /**
+     * 运行时相机：摄像机组件（系统脚本）通过 this.camera 读写它，
+     * 渲染循环每帧把 pose 套到视口相机上。没组件接管就走内置默认。
+     */
+    const rig: CameraRig = {
+      pose: { x: target.x, y: target.y, z: target.z, pitch: Math.PI / 4, yaw: 0, distance: view.dist },
+      follow: { x: 0, y: 0.5, z: 0, height: 1.8 },
+      autoDistance: view.dist,
+      claimedBy: null,
+    };
+    setCameraRig(rig);
+    // 调试 / 自检句柄：读当前相机位姿与接管状态
+    (window as unknown as { __camera?: CameraRig }).__camera = rig;
 
     const apply = () => {
       const { dist, yaw, pitch } = view;
@@ -335,7 +369,7 @@ export function SceneView({ project, selectedId, onRenameScene }: Props) {
 
     let raf = 0;
     let lastT = performance.now();
-    /** 进入播放后只收一次相机距离（编辑视角可能拉得很远，跟着角色走太远看不清） */
+    /** 进入播放后只收一次相机距离 */
     let playDistSet = false;
     const loop = () => {
       const now = performance.now();
@@ -345,19 +379,41 @@ export function SceneView({ project, selectedId, onRenameScene }: Props) {
       const rt = runtimeRef.current;
       if (playingRef.current && rt) {
         rt.tick(dt);
-        // 运行时相机：固定 45° 俯角、正对屏幕正上方，始终把角色放在画面正中
-        if (!playDistSet) {
-          // 让角色大约占屏幕高度的 1/3：dist = charH·cos(45°) / (2·tan(fov/2)·占比)
-          const want = (rt.charHeight * Math.cos(Math.PI / 4)) / (2 * Math.tan((camera.fov * Math.PI) / 360) * 0.32);
-          view.dist = Math.min(18, Math.max(4.5, want));
+
+        // 运行时相机：先把「跟随目标」同步给组件，组件再基于它算缓动
+        // 让角色大约占屏幕高度的 1/3：dist = charH·cos(45°) / (2·tan(fov/2)·占比)
+        const autoDist = (rt.charHeight * Math.cos(Math.PI / 4)) / (2 * Math.tan((camera.fov * Math.PI) / 360) * 0.32);
+        rig.follow.x = rt.state.x;
+        rig.follow.y = rt.charHeight * 0.5;
+        rig.follow.z = rt.state.z;
+        rig.follow.height = rt.charHeight;
+        rig.autoDistance = Math.min(18, Math.max(4.5, autoDist));
+
+        componentRuntimeRef.current?.tick(dt);
+
+        if (rig.claimedBy) {
+          // 摄像机组件接管：完全按它给的位姿（45° / 俯视、距离、缓动后的注视点）
+          view.pitch = rig.pose.pitch;
+          view.yaw = rig.pose.yaw;
+          view.dist = Math.max(1, rig.pose.distance);
+          target.set(rig.pose.x, rig.pose.y, rig.pose.z);
           playDistSet = true;
+        } else {
+          // 没有摄像机对象：内置默认 —— 45° 俯角、正对屏幕正上方、角色在画面正中
+          if (!playDistSet) {
+            // 进入播放后只收一次相机距离（编辑视角可能拉得很远，跟着角色走太远看不清）
+            view.dist = rig.autoDistance;
+            playDistSet = true;
+          }
+          view.yaw = 0;
+          view.pitch = Math.PI / 4;
+          // 视点高度取角色身高的一半 → 角色整体（脚到头）正好居中
+          target.set(rt.state.x, rt.charHeight * 0.5, rt.state.z);
         }
-        view.yaw = 0;
-        view.pitch = Math.PI / 4;
-        // 视点高度取角色身高的一半 → 角色整体（脚到头）正好居中
-        target.set(rt.state.x, rt.charHeight * 0.5, rt.state.z);
       } else {
         playDistSet = false;
+        // 退出播放：交出相机控制权，下次播放重新由组件抢
+        rig.claimedBy = null;
       }
       apply();
       renderer.render(scene, camera);
@@ -383,6 +439,8 @@ export function SceneView({ project, selectedId, onRenameScene }: Props) {
 
     return () => {
       cancelAnimationFrame(raf);
+      attachViewportScene(null);
+      setCameraRig(null);
       ro.disconnect();
       el.removeEventListener('pointerdown', onDown);
       el.removeEventListener('pointermove', onMove);
@@ -459,8 +517,10 @@ export function SceneView({ project, selectedId, onRenameScene }: Props) {
     if (playing) {
       runtimeRef.current?.reset();
       runtimeRef.current?.startScripts();
+      componentRuntimeRef.current?.start(projectRef.current);
       return;
     }
+    componentRuntimeRef.current?.stop();
     resetRef.current?.();
   }, [playing]);
 
@@ -474,11 +534,15 @@ export function SceneView({ project, selectedId, onRenameScene }: Props) {
       const rt = runtimeRef.current;
       if (rt) {
         const logs = rt.scriptVm?.logs ?? [];
+        // 相机角度跟着实际位姿走（摄像机组件接管后可能不是 45°）
+        const cam = (window as unknown as { __camera?: CameraRig }).__camera;
         setHud({
           state: rt.state.stateName,
           x: rt.state.x,
           z: rt.state.z,
           scriptLog: logs.length > 0 ? logs[logs.length - 1] : null,
+          pitchDeg: Math.round(((((cam?.claimedBy ? cam.pose.pitch : Math.PI / 4) * 180) / Math.PI) * 10) / 10),
+          claimed: !!cam?.claimedBy,
         });
       }
     }, 150);
@@ -688,7 +752,7 @@ export function SceneView({ project, selectedId, onRenameScene }: Props) {
                 · {hud.scriptLog}
               </span>
             )}
-            <span style={{ color: T.dimmer, fontWeight: 400 }}> · WASD / 方向键移动 · 相机 45° 跟随</span>
+            <span style={{ color: T.dimmer, fontWeight: 400 }}> · WASD / 方向键移动 · 相机{hud?.claimed ? ` ${hud.pitchDeg}°` : ''}跟随</span>
           </span>
         )}
         <span style={{ fontSize: 11, color: T.dimmer }}>
@@ -803,6 +867,7 @@ export function SceneView({ project, selectedId, onRenameScene }: Props) {
                             : () => ({ x: followCharNode.x, z: followCharNode.z })
                           : null
                       }
+                      getPos={playing ? liveNodePos : null}
                     />
                   </div>
 
@@ -897,9 +962,20 @@ export function SceneView({ project, selectedId, onRenameScene }: Props) {
                   if (ids.length === 0) return;
                   e.preventDefault();
                   e.stopPropagation();
-                  const next = [...(node.scriptIds ?? [])];
-                  for (const id of ids) if (!next.includes(id)) next.push(id);
-                  editorStore.setNodeScripts(node.id, next);
+                  // 组件脚本进组件列表（属性面板按组件区块渲染），老钩子脚本仍进脚本槽
+                  const isHook = (id: string) => project.scripts.find((s) => s.id === id)?.kind === 'hook';
+                  const comps = ids.filter((id) => !isHook(id));
+                  const hooks = ids.filter((id) => isHook(id));
+                  if (comps.length) {
+                    const nextC = [...(node.componentIds ?? [])];
+                    for (const id of comps) if (!nextC.includes(id)) nextC.push(id);
+                    if (nextC.length !== (node.componentIds ?? []).length) editorStore.setNodeComponents(node.id, nextC);
+                  }
+                  if (hooks.length) {
+                    const next = [...(node.scriptIds ?? [])];
+                    for (const id of hooks) if (!next.includes(id)) next.push(id);
+                    if (next.length !== (node.scriptIds ?? []).length) editorStore.setNodeScripts(node.id, next);
+                  }
                   editorStore.selectScene(node.id);
                 }}
                 title={`${meta.name} · ${node.name}（拖拽改位置；脚本可以直接拖到它上面挂载）`}

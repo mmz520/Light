@@ -24,6 +24,8 @@ export interface MenuActions {
   closeAllWindows: () => void;
   showAbout: () => void;
   showStructure: () => void;
+  /** 帮助 → 脚本 API 参考（只读文档窗口） */
+  showApiHelp: () => void;
 }
 
 interface Props {
@@ -103,13 +105,15 @@ export function MenuBar({ actions, panels, windowCount }: Props) {
       id: 'window',
       label: '窗口',
       items: [
-        { label: `关闭所有动画窗口${windowCount ? `（${windowCount}）` : ''}`, disabled: windowCount === 0, onClick: actions.closeAllWindows },
+        { label: `关闭所有子窗口${windowCount ? `（${windowCount}）` : ''}`, disabled: windowCount === 0, onClick: actions.closeAllWindows },
       ],
     },
     {
       id: 'help',
       label: '帮助',
       items: [
+        { label: '脚本 API 参考', hint: 'F1', onClick: actions.showApiHelp },
+        { type: 'sep' },
         { label: '工程文件结构说明', onClick: actions.showStructure },
         { type: 'sep' },
         { label: '关于 Light Editor', onClick: actions.showAbout },

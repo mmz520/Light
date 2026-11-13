@@ -86,6 +86,7 @@ import {
 } from './statemachine';
 import { makeBlankController, makeMoveController, newVariable, removeVariableSafely } from './controller';
 import { SCRIPT_TEMPLATE, scriptFileOf } from './types';
+import { PRESET_COMPONENT_SCRIPTS, presetKeysForKind } from './presetScripts';
 import {
   DEFAULT_DECOR_FILE,
   DEFAULT_DECOR_NAME,
@@ -203,6 +204,8 @@ function toMetaFile(project: ProjectDoc): ProjectMetaFile {
           folder: s.folder,
           createdAt: s.createdAt,
           file: scriptFileOf(project.scripts, s),
+          kind: s.kind,
+          preset: s.preset,
         }),
       ),
     },
@@ -232,6 +235,12 @@ function stemOf(p: string): string {
 class EditorStore {
   private state: EditorState = initialState;
   private listeners = new Set<() => void>();
+  /** 工程发生变化时的监听（多窗口同步用：推给其它窗口） */
+  private projectWatchers = new Set<(p: ProjectDoc) => void>();
+  /** true = 正在应用远端快照，别再广播回去（防环路） */
+  private muted = false;
+  /** 只有主窗口负责写盘；独立编辑器窗口只做内存副本 */
+  private canPersist = true;
 
   private past: ProjectDoc[] = [];
   private future: ProjectDoc[] = [];
@@ -255,8 +264,59 @@ class EditorStore {
   getSnapshot = (): EditorState => this.state;
 
   private set(patch: Partial<EditorState>) {
+    const prevProject = this.state.project;
     this.state = { ...this.state, ...patch };
     for (const fn of this.listeners) fn();
+    if (!this.muted && patch.project !== undefined && patch.project !== prevProject && patch.project) {
+      for (const fn of this.projectWatchers) fn(patch.project);
+    }
+  }
+
+  /** 监听工程变化（多窗口同步 / 自动保存等）；返回取消函数 */
+  onProjectChange(fn: (p: ProjectDoc) => void): () => void {
+    this.projectWatchers.add(fn);
+    return () => {
+      this.projectWatchers.delete(fn);
+    };
+  }
+
+  /**
+   * 独立编辑器窗口启动：直接吃主窗口发来的工程快照。
+   * 不读盘、不写盘、不广播（首次渲染不能触发同步回路）。
+   */
+  bootFromSnapshot(project: ProjectDoc, opts: { persist?: boolean } = {}): void {
+    this.canPersist = opts.persist === true;
+    this.past = [];
+    this.future = [];
+    this.muted = true;
+    this.set({
+      status: 'ready',
+      project,
+      saveState: 'saved',
+      welcomeNote: null,
+      error: null,
+      busy: null,
+      canUndo: false,
+      canRedo: false,
+    });
+    this.muted = false;
+  }
+
+  /**
+   * 应用别的窗口推来的工程快照。
+   * 记一步历史（这样在主窗口按 Ctrl+Z 也能撤回别处的改动），但不回推，避免环路。
+   */
+  applyRemote(project: ProjectDoc): void {
+    const cur = this.state.project;
+    if (!cur) return;
+    if (cur === project) return;
+    // updatedAt 没变 = 同一份文档（mutate 每次都会刷新它），直接跳过
+    if (cur.updatedAt === project.updatedAt) return;
+    this.pushHistory('remote');
+    this.muted = true;
+    this.set({ project });
+    this.muted = false;
+    this.markDirty();
   }
 
   /* ---------------- 生命周期 ---------------- */
@@ -495,6 +555,8 @@ class EditorStore {
           folder: entry.folder || FOLDER_OF_KIND.script,
           code,
           createdAt: entry.createdAt ?? Date.now(),
+          kind: entry.kind === 'component' ? 'component' : 'hook',
+          preset: entry.preset,
         });
       }
     }
@@ -560,6 +622,11 @@ class EditorStore {
         ground: n.kind === 'ground' && n.ground ? normalizeGround(n.ground) : undefined,
         mapui: n.kind === 'mapui' ? normalizeMapui(n.mapui) : undefined,
         scriptIds: Array.isArray(n.scriptIds) ? n.scriptIds.filter((x) => typeof x === 'string') : [],
+        componentIds: Array.isArray(n.componentIds) ? n.componentIds.filter((x) => typeof x === 'string') : undefined,
+        components:
+          n.components && typeof n.components === 'object' && !Array.isArray(n.components)
+            ? (n.components as Record<string, Record<string, unknown>>)
+            : undefined,
         minimapShow: typeof n.minimapShow === 'boolean' ? n.minimapShow : undefined,
         minimapIcon: typeof n.minimapIcon === 'string' ? n.minimapIcon : undefined,
       });
@@ -711,6 +778,9 @@ class EditorStore {
       canRedo: false,
       recent: await desk.project.recent().catch(() => this.state.recent),
     });
+    // 数据层兜底：打开工程后立刻确保预设组件脚本存在、老节点挂上默认组件（幂等）。
+    // 不依赖 React effect —— effect 受渲染时序影响可能不触发（曾导致系统脚本目录空白）。
+    this.ensurePresetComponents();
     void desk.window.setTitle(`Light Editor — ${project.name}`);
   }
 
@@ -930,6 +1000,13 @@ class EditorStore {
   addSceneNode(kind: SceneKind, name?: string, parentId: string | null = null, pos?: { x: number; z: number }): string | null {
     const p = this.state.project;
     if (!p) return null;
+    // 系统组件脚本可能还没创建（新工程 / 老工程），先补上；下面新建节点时按类型自动挂载
+    this.ensurePresetComponents();
+    const doc0 = this.state.project;
+    if (!doc0) return null;
+    const presetIds = presetKeysForKind(kind)
+      .map((k) => doc0.scripts.find((s) => s.preset === k)?.id)
+      .filter((x): x is string => !!x);
     const meta = sceneKindMeta(kind);
     const count = p.scene.length;
     const ring = 1.5 + Math.floor(count / 6) * 1.3;
@@ -953,6 +1030,8 @@ class EditorStore {
         ...(kind === 'ground' ? { ground: { ...clone(p.ground), map: '' } } : {}),
         // 地图元素：默认参数（圆形、中等显示范围、用内置装饰样式）
         ...(kind === 'mapui' ? { mapui: defaultMapui() } : {}),
+        // 默认系统组件（变换 / 角色 / 小地图 / 地图元素 / 地皮）：按节点类型自动挂载，不用手动添加
+        ...(presetIds.length ? { componentIds: [...presetIds] } : {}),
         // 角色：默认数值 + 自动绑上工程里的第一个状态机与控制器（一个都没有就现建）
         ...(kind === 'character'
           ? {
@@ -1404,10 +1483,16 @@ class EditorStore {
     if (!p) return 0;
     const kind = p.folderKinds[to];
     if (!kind) return 0;
-    const valid = refs.filter((r) => r.kind === kind);
+    // 系统脚本（预设组件）不能移动目录
+    const presetScriptIds = new Set(p.scripts.filter((s) => s.preset).map((s) => s.id));
+    const valid = refs.filter((r) => r.kind === kind && !(r.kind === 'script' && presetScriptIds.has(r.id)));
     const skipped = refs.length - valid.length;
     if (valid.length === 0) {
-      this.set({ error: `「${to}」是${kindLabel(kind)}目录，只能放${kindLabel(kind)}。` });
+      this.set({
+        error: refs.some((r) => r.kind === 'script' && presetScriptIds.has(r.id))
+          ? '系统脚本是预设组件，不能移动目录。'
+          : `「${to}」是${kindLabel(kind)}目录，只能放${kindLabel(kind)}。`,
+      });
       return 0;
     }
     this.mutate((doc) => {
@@ -1416,7 +1501,7 @@ class EditorStore {
         if (asset) asset.folder = to;
       }
     });
-    if (skipped > 0) this.set({ error: `有 ${skipped} 个资源类型不匹配，没有移动。` });
+    if (skipped > 0) this.set({ error: `有 ${skipped} 个资源没有移动（系统脚本不可移动，或类型不匹配）。` });
     return valid.length;
   }
 
@@ -1858,16 +1943,17 @@ class EditorStore {
 
   /* ---------------- 脚本 ---------------- */
 
-  addScript(folder = FOLDER_OF_KIND.script, code?: string, opts: { select?: boolean } = {}): string {
+  addScript(folder = FOLDER_OF_KIND.script, code?: string, opts: { select?: boolean; kind?: ScriptAsset['kind'] } = {}): string {
     let newId = '';
     this.mutate((p) => {
-      const name = uniqueName('新脚本', p.scripts.map((s) => s.name));
+      const name = uniqueName(opts.kind === 'hook' ? '新脚本' : '新组件', p.scripts.map((s) => s.name));
       const s: ScriptAsset = {
         id: shortId('script'),
         name,
         folder: ensureFolder(p, folder, 'script'),
         code: code ?? SCRIPT_TEMPLATE,
         createdAt: Date.now(),
+        kind: opts.kind ?? 'component',
       };
       p.scripts.push(s);
       newId = s.id;
@@ -1893,6 +1979,110 @@ class EditorStore {
       const n = p.scene.find((x) => x.id === nodeId);
       if (n) n.scriptIds = ids;
     }, `node-script:${nodeId}`);
+  }
+
+  /* ---------------- 组件脚本（属性面板驱动） ---------------- */
+
+  /** 节点挂/卸组件脚本（整体改写 componentIds） */
+  setNodeComponents(nodeId: string, ids: string[]): void {
+    this.mutate((p) => {
+      const n = p.scene.find((x) => x.id === nodeId);
+      if (!n) return;
+      n.componentIds = ids.filter((x, i) => !!x && ids.indexOf(x) === i);
+      // 卸载的组件顺手清掉它的字段值
+      if (n.components) {
+        for (const key of Object.keys(n.components)) if (!n.componentIds.includes(key)) delete n.components[key];
+      }
+    }, `node-components:${nodeId}`);
+  }
+
+  /** 组件字段值写回节点（只存改过的值，没存过的用脚本默认值） */
+  setNodeComponentField(nodeId: string, scriptId: string, key: string, value: unknown, mergeKey?: string): void {
+    this.mutate((p) => {
+      const n = p.scene.find((x) => x.id === nodeId);
+      if (!n) return;
+      const all = { ...(n.components ?? {}) };
+      all[scriptId] = { ...(all[scriptId] ?? {}), [key]: value };
+      n.components = all;
+    }, mergeKey);
+  }
+
+  /** 组件脚本改节点顶层字段（位置 / 名称 / 小地图设置…） */
+  patchNodeFields(nodeId: string, patch: Record<string, unknown>, mergeKey?: string): void {
+    this.mutate((p) => {
+      const n = p.scene.find((x) => x.id === nodeId);
+      if (!n) return;
+      Object.assign(n, patch);
+    }, mergeKey);
+  }
+
+  /**
+   * 确保预设组件脚本存在，并给还没有 componentIds 的老节点挂上默认组件。
+   * 幂等：新建工程 / 打开老工程各调一次即可。
+   */
+  ensurePresetComponents(): void {
+    const project = this.state.project;
+    if (!project) return;
+
+    /** 节点「应有的」组件列表：系统组件按类型在前（当前预设脚本 id）+ 用户自己挂的（仍存在的）在后 */
+    const wantOf = (n: SceneNode, p: ProjectDoc): string[] => {
+      const idOf = (key: string) => p.scripts.find((s) => s.preset === key)?.id;
+      const sysIds = presetKeysForKind(n.kind)
+        .map((k) => idOf(k))
+        .filter((x): x is string => !!x);
+      const users: string[] = [];
+      for (const id of n.componentIds ?? []) {
+        const sc = p.scripts.find((s) => s.id === id);
+        // 失效 id（脚本被删 / 换成另一个工程）丢掉；用户自己的组件保留
+        if (!sc || sc.preset) continue;
+        if (!users.includes(id)) users.push(id);
+      }
+      // 老数据：组件脚本被挂在 scriptIds 里 —— 一并挪进组件列表，属性面板按组件区块渲染
+      for (const id of n.scriptIds ?? []) {
+        const sc = p.scripts.find((s) => s.id === id);
+        if (sc && sc.kind !== 'hook' && !users.includes(id)) users.push(id);
+      }
+      return [...sysIds, ...users];
+    };
+
+    const same = (a: string[] | undefined, b: string[]) =>
+      !!a && a.length === b.length && a.every((x, i) => x === b[i]);
+    /** scriptIds 里还残留组件脚本？ */
+    const strayComponent = (n: SceneNode, p: ProjectDoc) =>
+      (n.scriptIds ?? []).some((id) => {
+        const sc = p.scripts.find((s) => s.id === id);
+        return !!sc && sc.kind !== 'hook';
+      });
+    const missing = PRESET_COMPONENT_SCRIPTS.filter((ps) => !project.scripts.some((s) => s.preset === ps.key));
+    const needNodes = project.scene.some((n) => !same(n.componentIds, wantOf(n, project)) || strayComponent(n, project));
+    if (missing.length === 0 && !needNodes) return;
+
+    this.mutate((p) => {
+      for (const preset of missing) {
+        const s: ScriptAsset = {
+          id: shortId('script'),
+          name: uniqueName(preset.name, p.scripts.map((x) => x.name)),
+          folder: ensureFolder(p, FOLDER_OF_KIND.script, 'script'),
+          code: preset.code,
+          createdAt: Date.now(),
+          kind: 'component',
+          preset: preset.key,
+        };
+        p.scripts.push(s);
+      }
+      // 建好脚本后重新算：补上缺失的系统组件、修掉指向失效脚本的 id
+      for (const n of p.scene) {
+        const want = wantOf(n, p);
+        if (!same(n.componentIds, want)) n.componentIds = want;
+        // 组件脚本不再走脚本槽：从 scriptIds 里摘掉（已并入组件列表）
+        if (strayComponent(n, p)) {
+          n.scriptIds = (n.scriptIds ?? []).filter((id) => {
+            const sc = p.scripts.find((s) => s.id === id);
+            return !sc || sc.kind === 'hook';
+          });
+        }
+      }
+    });
   }
 
   /** 节点在小地图上的显示开关与图标（minimapIcon = 图组 id，null 清空） */
@@ -1921,6 +2111,12 @@ class EditorStore {
   async deleteAsset(kind: AssetKind, id: string): Promise<void> {
     const project = this.state.project;
     if (!project) return;
+
+    // 系统脚本（预设组件）：只可编辑，不能删除
+    if (kind === 'script' && project.scripts.find((s) => s.id === id)?.preset) {
+      this.set({ error: '系统脚本是预设组件，不能删除。可以打开修改它的代码。' });
+      return;
+    }
 
     // 引用检查：被引用时不允许直接删，给出明确提示
     if (kind === 'image') {
@@ -2033,6 +2229,11 @@ class EditorStore {
   /* ---------------- 保存 ---------------- */
 
   markDirty(): void {
+    // 独立编辑器窗口只维护内存副本，落盘统一由主窗口负责
+    if (!this.canPersist) {
+      this.set({ saveState: 'saved' });
+      return;
+    }
     this.set({ saveState: 'saving' });
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => void this.saveNow(), 600);
@@ -2066,6 +2267,8 @@ class EditorStore {
 
   async saveNow(): Promise<void> {
     const project = this.state.project;
+    // 独立编辑器窗口不写盘：文档由主窗口统一保存
+    if (!this.canPersist) return;
     if (!project || !isDesktop) {
       this.set({ saveState: 'idle' });
       return;

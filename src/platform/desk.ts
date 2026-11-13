@@ -280,6 +280,32 @@ const windowApi: DeskApi['window'] = {
   },
 };
 
+const editorWindowApi: DeskApi['editorWindow'] = {
+  open: async (opts) => {
+    if (!bridge) throw desktopOnly('独立编辑器窗口');
+    return unwrap(await bridge.editorWindow.open(opts));
+  },
+  close: async (ref) => {
+    if (!bridge) return;
+    unwrap(await bridge.editorWindow.close(ref));
+  },
+  closeAll: async () => {
+    if (!bridge) return;
+    unwrap(await bridge.editorWindow.closeAll());
+  },
+  ready: async (ref) => {
+    if (!bridge) return;
+    unwrap(await bridge.editorWindow.ready(ref));
+  },
+  pushDoc: async (project) => {
+    if (!bridge) return;
+    unwrap(await bridge.editorWindow.pushDoc(project));
+  },
+  onInit: (cb) => (bridge ? bridge.editorWindow.onInit(cb) : () => {}),
+  onDoc: (cb) => (bridge ? bridge.editorWindow.onDoc(cb) : () => {}),
+  onClosed: (cb) => (bridge ? bridge.editorWindow.onClosed(cb) : () => {}),
+};
+
 export const desk: DeskApi = {
   env: bridge?.env ?? {
     isDesktop: false,
@@ -295,6 +321,7 @@ export const desk: DeskApi = {
   app: appApi,
   watch: watchApi,
   window: windowApi,
+  editorWindow: editorWindowApi,
   onMenuAction: (cb: (action: MenuAction) => void) => (bridge ? bridge.onMenuAction(cb) : () => {}),
   onFileDrop: (cb: (paths: string[], pos: { x: number; y: number }) => void) =>
     bridge ? bridge.onFileDrop(cb) : () => {},

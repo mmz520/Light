@@ -109,6 +109,8 @@ export class SceneRuntime {
       for (const sid of ids) {
         const sc = this.doc.scripts.find((s) => s.id === sid);
         if (!sc) continue;
+        // 组件脚本（TS class）由 ComponentRuntime 在主线程执行，不走 quickjs 沙箱
+        if (sc.kind === 'component') continue;
         vm.mount(sc.id, sc.name, sc.code, self);
       }
       this.scriptSelves.push(self);

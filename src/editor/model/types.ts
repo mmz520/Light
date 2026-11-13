@@ -467,7 +467,17 @@ export interface ScriptAsset {
   /** 脚本源码 */
   code: string;
   createdAt: number;
+  /**
+   * 脚本类型：
+   *   · component（默认）= TS class 组件脚本，驱动属性面板 + 运行时（可访问 three）
+   *   · hook = 老式 JS 函数钩子脚本，跑在 quickjs 沙箱里（兼容老工程）
+   */
+  kind?: ScriptKind;
+  /** 预设脚本的稳定标识（内置脚本被删掉后能重新生成，不靠名字匹配） */
+  preset?: string;
 }
+
+export type ScriptKind = 'component' | 'hook';
 
 /** 文件名安全化：脚本名 → 磁盘上的 .js 基名（路径非法字符换成下划线） */
 export function sanitizeFileBase(name: string): string {
@@ -479,7 +489,7 @@ export function sanitizeFileBase(name: string): string {
  * 脚本源码在工程里的相对路径（assets/scripts/<名字>.js）。
  * 脚本名在工程内唯一（renameAsset 保证），这里再按基名兜底去重， VS Code 里能按名字认文件。
  */
-export function scriptFileOf(scripts: { id: string; name: string }[], s: { id: string; name: string }): string {
+export function scriptFileOf(scripts: { id: string; name: string }[], s: { id: string; name: string; kind?: ScriptKind }): string {
   const base = sanitizeFileBase(s.name);
   const taken = new Set(scripts.filter((x) => x.id !== s.id).map((x) => sanitizeFileBase(x.name).toLowerCase()));
   let name = base;
@@ -488,14 +498,13 @@ export function scriptFileOf(scripts: { id: string; name: string }[], s: { id: s
     name = `${base}-${i}`;
     i += 1;
   }
-  return `${FOLDERS.scripts}/${name}.js`;
+  return `${FOLDERS.scripts}/${name}${s.kind === 'hook' ? '.js' : '.ts'}`;
 }
 
-/** v1 内置脚本模板（新建脚本时给一份可运行的骨架，降低上手门槛） */
-export const SCRIPT_TEMPLATE = `// 脚本以「钩子函数」参与运行时，不用的钩子删掉即可。
+/** 老式函数钩子脚本模板（quickjs 沙箱；新建脚本已不用，保留给 hook 类型） */
+export const HOOK_SCRIPT_TEMPLATE = `// 老式脚本：以「钩子函数」参与运行时，跑在 quickjs 沙箱里。
 // self  = 挂载本脚本的场景对象（x / z / face / name / vars）
 // Light = 全局 API（log / input / emit / on / time / find）
-// 完整 API 速查见编辑器右侧面板。
 
 function onStart(self, Light) {
   Light.log(self.name + ' 上线');
@@ -503,8 +512,6 @@ function onStart(self, Light) {
 
 function onUpdate(self, Light, dt) {
   // 每帧调用；dt 是这一帧的秒数。
-  // 示例：按住 W 时向上走（取消注释即可生效）
-  // if (Light.input.isDown('KeyW')) self.z -= dt * 2;
 }
 
 function onEvent(self, Light, name, data) {
@@ -513,6 +520,44 @@ function onEvent(self, Light, name, data) {
 
 function onDestroy(self, Light) {
   // 播放结束、实例销毁时调用
+}
+`;
+
+/**
+ * 组件脚本模板（TS class）—— 属性面板由它驱动。
+ * 新建脚本默认用这份模板。
+ */
+export const SCRIPT_TEMPLATE = `// 组件脚本：一个 TS class，继承 LightComponent。
+// 用注解把公共变量暴露到属性面板；不写注解也能用（按默认值自动推断控件）。
+// 注解：@Group(分组, 排序) @Hidden() @Label(显示名) @Hint(说明) @Order(组内排序)
+//      @Num(min,max,step) @Int() @Bool() @Str() @Text() @Color() @Enum([...])
+//      @Asset('texture'|'group'|'animation'|'statemachine'|'controller'|'image'|'script', {multiple})
+//      @Json() @List() @Panel('内置面板id')
+// 生命周期：onStart() / onUpdate(dt) / onEvent(type, payload) / onDestroy() / onFieldChange(key, value)
+// 可用：this.node / this.project / this.scene / this.three / this.object3d
+//      this.log(...) / this.emit(type, payload) / this.on(type, fn) / Event.emit(type, payload)
+
+@Component('我的组件', { icon: '🧩', order: 50 })
+export default class MyComponent extends LightComponent {
+  @Group('基础') @Label('开关') @Bool() enabled = true;
+
+  @Group('基础') @Label('数量') @Num(0, 100, 1) count = 10;
+
+  @Group('基础') @Label('说明') @Text() note = '';
+
+  @Group('资源', 20) @Label('贴图') @Asset('texture') textureId: string | null = null;
+
+  onStart() {
+    this.log(this.node.name + ' 的组件启动');
+  }
+
+  onUpdate(dt: number) {
+    // 每帧；dt 秒
+  }
+
+  onEvent(type: string, payload?: any) {
+    // Event.emit('某事件', {...}) 会送到这里
+  }
 }
 `;
 
@@ -858,8 +903,8 @@ export const SCENE_KINDS: SceneKindMeta[] = [
   { id: 'enemy', name: '敌人', baseName: '敌人', color: '#c4553f', desc: '会主动攻击的生物', solid: true },
   { id: 'character', name: '角色', baseName: '角色', color: '#8ba4bd', desc: '玩家可以操作的角色', solid: true },
   { id: 'mapui', name: '地图元素', baseName: '地图元素', color: '#c9a35c', desc: '屏幕 UI：小地图框、罗盘、区域标题', solid: false },
-  // 摄像头：占位节点，运行时相机跟随角色；参数（跟随目标 / 角度 / 距离）后续接
-  { id: 'camera', name: '摄像头', baseName: '摄像头', color: '#7fb0a8', desc: '运行时相机：固定跟随角色、45° 俯角 —— 占位，参数未实现', solid: false },
+  // 摄像机：运行时视口的相机，参数由挂载的「摄像机」系统脚本提供
+  { id: 'camera', name: '摄像机', baseName: '摄像机', color: '#7fb0a8', desc: '运行时相机：45° 斜视 / 垂直俯视，可缓动跟随角色', solid: false },
   // 时间 / 天气：先只做成可添加的占位对象，参数与运行时逻辑都还没接
   { id: 'time', name: '时间', baseName: '时间', color: '#b08ac4', desc: '四季（春 / 夏 / 秋 / 冬）与白天黑夜循环 —— 占位，未实现', solid: false },
   { id: 'weather', name: '天气', baseName: '天气', color: '#7fa8c0', desc: '晴 / 雨 / 雪 / 雾等天气 —— 占位，未实现', solid: false },
@@ -893,6 +938,16 @@ export interface SceneNode {
   character?: CharacterConfig;
   /** 挂载的脚本资产 id 列表（任何节点都能挂；运行时按顺序实例化） */
   scriptIds?: string[];
+  /**
+   * 挂载的组件脚本 id 列表（驱动属性面板的那些 class 脚本）。
+   * 与 scriptIds 分开存：scriptIds 留给老的函数钩子脚本，互不干扰。
+   */
+  componentIds?: string[];
+  /**
+   * 组件字段值：scriptId → { 字段名: 值 }。
+   * 只存被改过的值，没存过的用脚本里的默认值。
+   */
+  components?: Record<string, Record<string, unknown>>;
   /** 小地图上是否显示这个对象（默认显示；false = 从小地图上隐藏） */
   minimapShow?: boolean;
   /**
@@ -965,6 +1020,10 @@ export interface ScriptIndexEntry {
   /** 老工程（v2 早期）没有这个字段 */
   createdAt?: number;
   file: string;
+  /** 组件脚本标记（'component'）；缺省视为老式钩子脚本 */
+  kind?: string;
+  /** 预设组件键（transform / character / minimap / mapui / ground），用于识别系统脚本 */
+  preset?: string;
 }
 
 /** <root>/metadata.json */

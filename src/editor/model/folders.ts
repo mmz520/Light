@@ -85,27 +85,31 @@ export function assetsIn(project: ProjectDoc, path: string): { kind: AssetKind; 
   return out;
 }
 
-/** 目录里的资产数量（不含子目录） */
-export function assetCount(project: ProjectDoc, path: string): number {
+/**
+ * 目录里的资产数量（不含子目录）。
+ * excludePresetScripts = true 时（开发模式的「系统脚本」固定目录），
+ * 预设脚本不计入普通脚本目录的计数。
+ */
+export function assetCount(project: ProjectDoc, path: string, excludePresetScripts = false): number {
   return (
     project.images.filter((a) => a.folder === path).length +
     project.textures.filter((a) => a.folder === path).length +
     project.animations.filter((a) => a.folder === path).length +
     project.stateMachines.filter((a) => a.folder === path).length +
     project.controllers.filter((a) => a.folder === path).length +
-    project.scripts.filter((a) => a.folder === path).length
+    project.scripts.filter((a) => a.folder === path && !(excludePresetScripts && a.preset)).length
   );
 }
 
-/** 目录下（含子目录）的资产数量 */
-export function deepAssetCount(project: ProjectDoc, path: string): number {
+/** 目录下（含子目录）的资产数量（excludePresetScripts 含义同 assetCount） */
+export function deepAssetCount(project: ProjectDoc, path: string, excludePresetScripts = false): number {
   return (
     project.images.filter((a) => isInside(a.folder, path)).length +
     project.textures.filter((a) => isInside(a.folder, path)).length +
     project.animations.filter((a) => isInside(a.folder, path)).length +
     project.stateMachines.filter((a) => isInside(a.folder, path)).length +
     project.controllers.filter((a) => isInside(a.folder, path)).length +
-    project.scripts.filter((a) => isInside(a.folder, path)).length
+    project.scripts.filter((a) => isInside(a.folder, path) && !(excludePresetScripts && a.preset)).length
   );
 }
 

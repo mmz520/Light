@@ -1,4 +1,4 @@
-import { BrowserWindow, Menu, app, shell } from 'electron';
+import { BrowserWindow, Menu, app, ipcMain, shell } from 'electron';
 import path from 'node:path';
 
 import { CH } from '../src/shared/ipc';
@@ -6,6 +6,7 @@ import { registerAppIpc, broadcast } from './ipc/app';
 import { registerDialogIpc } from './ipc/dialog';
 import { registerFsIpc } from './ipc/fs';
 import { closeAllWatchers, registerWatchIpc } from './ipc/watch';
+import { registerEditorWindowIpc, resetEditorWindows } from './ipc/editorWindows';
 import { handle, toErrorInfo } from './lib/ipc';
 import { handleAssetProtocol, registerAssetScheme } from './lib/protocol';
 import * as projectStore from './lib/project-store';
@@ -18,6 +19,8 @@ const isShot = process.argv.includes('--shot');
 const isLive = process.argv.includes('--live');
 /** 录演示动图：建示例工程 → 播放 → 模拟 WASD → 抓帧 */
 const isRecord = process.argv.includes('--record');
+/** 自检 / 截图 / 录制：编辑器窗口仍用页内浮窗，方便脚本在同一个文档里查 DOM */
+const isInlineWindows = isShot || isLive || isSmoke || isRecord;
 
 // 自动化模式用独立 profile：既不和用户正在用的实例抢单实例锁，也不共用缓存目录
 if (isShot || isLive || isSmoke || isRecord) {
@@ -82,6 +85,7 @@ function createWindow(): void {
   });
 
   mainWindow.on('closed', () => {
+    resetEditorWindows();
     mainWindow = null;
   });
 
@@ -96,9 +100,35 @@ function createWindow(): void {
   });
 
   if (devServerUrl) {
-    void mainWindow.loadURL(devServerUrl);
+    // 开发模式直连本地 dev server：系统代理开着时（VPN / 抓包工具 / WorkBuddy 代理），
+    // localhost 的请求会被代理劫走返回错误页，窗口直接白屏 —— 这里强制不走代理。
+    void mainWindow.webContents.session.setProxy({ mode: 'direct' }).then(() => {
+      // dev server 可能还没就绪（vite 冷启动），加载失败时重试几次
+      const devUrl = (() => {
+        try {
+          const u = new URL(devServerUrl);
+          if (isInlineWindows) u.searchParams.set('inline-windows', '1');
+          return u.toString();
+        } catch {
+          return devServerUrl;
+        }
+      })();
+      const loadDev = (left: number): void => {
+        mainWindow
+          ?.loadURL(devUrl)
+          .catch(() => {
+            if (left > 0 && mainWindow && !mainWindow.isDestroyed()) {
+              setTimeout(() => loadDev(left - 1), 500);
+            }
+          });
+      };
+      loadDev(20);
+    });
   } else {
-    void mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    void mainWindow.loadFile(
+      path.join(__dirname, '../dist/index.html'),
+      isInlineWindows ? { query: { 'inline-windows': '1' } } : undefined,
+    );
   }
 }
 
@@ -168,9 +198,25 @@ function registerWindowIpc(): void {
     if (mainWindow.isMaximized()) mainWindow.unmaximize();
     else mainWindow.maximize();
   });
-  handle(CH.winClose, () => mainWindow?.close());
+  // 注意：这几个通道要作用在「发请求的窗口」上 —— 独立编辑器窗口也会调用 setTitle / close，
+  // 不能一律当成主窗口。
+  ipcMain.handle(CH.winClose, async (e) => {
+    try {
+      (BrowserWindow.fromWebContents(e.sender) ?? mainWindow)?.close();
+      return { ok: true, data: undefined };
+    } catch (err) {
+      return { ok: false, error: { code: 'EUNKNOWN', message: String(err) } };
+    }
+  });
   handle(CH.winIsMaximized, () => mainWindow?.isMaximized() ?? false);
-  handle(CH.winSetTitle, (title: string) => mainWindow?.setTitle(title));
+  ipcMain.handle(CH.winSetTitle, async (e, title: string) => {
+    try {
+      (BrowserWindow.fromWebContents(e.sender) ?? mainWindow)?.setTitle(String(title ?? ''));
+      return { ok: true, data: undefined };
+    } catch (err) {
+      return { ok: false, error: { code: 'EUNKNOWN', message: String(err) } };
+    }
+  });
   handle(CH.winToggleDevTools, () => mainWindow?.webContents.toggleDevTools());
   handle(CH.winToggleFullscreen, () => {
     if (!mainWindow) return;
@@ -191,6 +237,11 @@ async function onReady(): Promise<void> {
   registerAppIpc();
   registerWatchIpc();
   registerWindowIpc();
+  registerEditorWindowIpc({
+    getMain: () => mainWindow,
+    getEntry: () =>
+      devServerUrl ? { url: devServerUrl } : { file: path.join(__dirname, '../dist/index.html') },
+  });
 
   buildMenu();
   createWindow();

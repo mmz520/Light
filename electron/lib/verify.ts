@@ -1324,27 +1324,26 @@ export async function runShot(
           }
         : null;
 
-      // 脚本（W3）：建脚本 → 写测试代码 → 挂到角色；播放段验证 onStart 日志与脚本位移
+      // 脚本（W3）：组件脚本 = 属性面板里的区块（和系统组件同款）；老钩子脚本走脚本槽。
+      // 播放段用钩子脚本验证 onStart 日志与脚本位移
       let script = null;
       try {
-        window.__editor.addScript();
-        const p2 = window.__editor.getSnapshot().project;
-        const sc = p2.scripts[p2.scripts.length - 1];
-        window.__editor.mutateScript(sc.id, (s) => {
-          s.code =
-            "function onStart(self, Light){ Light.log('脚本已启动', self.name); }\\n" +
-            'function onUpdate(self, Light, dt){ self.x += dt * 3; }';
-        });
-        const chNode = p2.scene.find((n) => n.kind === 'character');
+        const chNode = window.__editor.getSnapshot().project.scene.find((n) => n.kind === 'character');
         window.__editor.selectScene(chNode.id);
-        await new Promise((r) => setTimeout(r, 250));
+        await new Promise((r) => setTimeout(r, 300));
 
-        // ① 属性面板点「＋ 添加脚本」→ 底下应出现一个空槽（不进工程数据，纯 UI）
+        // ① 点「＋ 添加脚本」→ 新建组件脚本并挂到当前对象；属性面板出现同款区块（可编辑、非系统）
         const addBtn = document.querySelector('[data-add-node-script]');
         if (addBtn) addBtn.click();
-        await new Promise((r) => setTimeout(r, 250));
-        const emptySlots = document.querySelectorAll('[data-node-script-empty]').length;
-        const slot = document.querySelector('[data-node-script-empty] [data-asset-slot]');
+        await new Promise((r) => setTimeout(r, 700));
+        const p2 = window.__editor.getSnapshot().project;
+        const cur = p2.scene.find((n) => n.id === chNode.id);
+        const userCompId = (cur.componentIds ?? []).find((id) => {
+          const s = p2.scripts.find((x) => x.id === id);
+          return !!s && !s.preset;
+        });
+        const userBlock = userCompId ? document.querySelector('[data-component="' + userCompId + '"]') : null;
+        const compBlock = !!userBlock && (userBlock.textContent || '').indexOf('我的组件') >= 0;
 
         const dtOf = (sid) => {
           const dt = new DataTransfer();
@@ -1353,34 +1352,31 @@ export async function runShot(
           return dt;
         };
 
-        // ② 把脚本从资源浏览器拖到那个空槽里 → 空槽变成真实挂载项
-        let slotDrop = false;
-        if (slot) {
-          slot.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dtOf(sc.id) }));
-          slot.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dtOf(sc.id) }));
-          await new Promise((r) => setTimeout(r, 300));
-          const cur = window.__editor.getSnapshot().project.scene.find((n) => n.id === chNode.id);
-          slotDrop =
-            (cur.scriptIds ?? []).includes(sc.id) &&
-            document.querySelectorAll('[data-node-script-empty]').length === emptySlots - 1;
-        }
-
-        // ③ 把脚本直接拖到视口里的对象标记上 → 也能挂
+        // ② 组件脚本拖到视口里的对象标记上 → 进组件列表（渲染成组件区块），不进脚本槽
         let tokenDrop = false;
         const gid = window.__editor.addSceneNode('enemy', '拖拽靶子');
-        await new Promise((r) => setTimeout(r, 350));
+        await new Promise((r) => setTimeout(r, 400));
         const token = [...document.querySelectorAll('[data-scene-token]')].find((el) => (el.title || '').indexOf('拖拽靶子') >= 0);
-        if (token) {
-          token.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dtOf(sc.id) }));
-          token.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dtOf(sc.id) }));
-          await new Promise((r) => setTimeout(r, 300));
+        if (token && userCompId) {
+          token.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dtOf(userCompId) }));
+          token.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dtOf(userCompId) }));
+          await new Promise((r) => setTimeout(r, 350));
           const cur2 = window.__editor.getSnapshot().project.scene.find((n) => n.id === gid);
-          tokenDrop = (cur2.scriptIds ?? []).includes(sc.id);
+          tokenDrop = (cur2.componentIds ?? []).includes(userCompId) && !(cur2.scriptIds ?? []).includes(userCompId);
         }
 
-        // 兜底：拖拽通道没通时用 API 挂（保证后面的播放段仍能验证脚本运行时）
-        if (!slotDrop) window.__editor.setNodeScripts(chNode.id, [sc.id]);
-        script = { created: true, emptySlot: emptySlots === 1, slotDrop, tokenDrop };
+        // ③ 老钩子脚本：仍挂到 scriptIds，属性面板显示为脚本槽
+        const hookId = window.__editor.addScript(
+          undefined,
+          "function onStart(self, Light){ Light.log('脚本已启动', self.name); } function onUpdate(self, Light, dt){ self.x += dt * 3; }",
+          { kind: 'hook', select: false },
+        );
+        window.__editor.setNodeScripts(chNode.id, [hookId]);
+        window.__editor.selectScene(chNode.id); // ② 里拖拽时选中项变成了靶子对象，这里选回角色
+        await new Promise((r) => setTimeout(r, 400));
+        const hookSlot = !!document.querySelector('[data-node-script]');
+
+        script = { created: true, compBlock, hookSlot, tokenDrop };
       } catch (e) {
         script = { err: String(e) };
       }
@@ -1436,8 +1432,8 @@ export async function runShot(
       const okScript =
         !!script &&
         script.created === true &&
-        script.emptySlot === true &&
-        script.slotDrop === true &&
+        script.compBlock === true &&
+        script.hookSlot === true &&
         script.tokenDrop === true &&
         !!play &&
         typeof play.scriptLog === 'string' &&

@@ -62,6 +62,15 @@ export const CH = {
   winSetTitle: 'desk:win:setTitle',
   winToggleDevTools: 'desk:win:devtools',
   winToggleFullscreen: 'desk:win:fullscreen',
+
+  // 独立的编辑器窗口（动画 / 状态机 / 控制器 / 脚本）——真实 OS 窗口
+  editorWinOpen: 'desk:editorWin:open',
+  editorWinClose: 'desk:editorWin:close',
+  editorWinCloseAll: 'desk:editorWin:closeAll',
+  editorWinReady: 'desk:editorWin:ready', // renderer → main：弹窗已挂载，请发初始文档
+  editorWinInit: 'desk:editorWin:init', // main → renderer：初始文档
+  editorWinDoc: 'desk:editorWin:doc', // 双向：工程快照广播
+  editorWinClosed: 'desk:editorWin:closed', // main → renderer：某个窗口被关掉
 } as const;
 
 /* ------------------------------------------------------------------ */
@@ -324,6 +333,50 @@ export interface DeskWindowApi {
   toggleFullscreen: () => Promise<void>;
 }
 
+/* ------------------------------------------------------------------ */
+/* 独立编辑器窗口（真实 OS 窗口，可以拖到别的显示器）                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 独立窗口类型：动画 / 状态机 / 控制器 / 脚本编辑器，以及只读的脚本 API 帮助。
+ * help 窗口不需要工程快照，主进程照样按 kind:refId 去重。
+ */
+export type EditorWindowKind = 'animation' | 'statemachine' | 'controller' | 'script' | 'help';
+
+export interface EditorWindowRef {
+  kind: EditorWindowKind;
+  refId: string;
+}
+
+/** 主窗口 → 主进程：开一个编辑器窗口 */
+export interface EditorWindowOpenOptions extends EditorWindowRef {
+  title: string;
+  subtitle?: string;
+  /** 打开时的工程快照（新窗口直接拿它初始化，省一次磁盘读） */
+  project?: unknown;
+}
+
+/** 主进程 → 弹窗：初始文档（工程快照 + 要编辑的资源 id） */
+export interface EditorWindowInitPayload extends EditorWindowRef {
+  /** 工程快照（ProjectDoc 的 JSON 形态；shared 层不依赖编辑器模型，因此写 unknown） */
+  project: unknown;
+}
+
+export interface DeskEditorWindowApi {
+  /** 打开（或聚焦）一个真实窗口；同一 kind+refId 只会有一个 */
+  open: (opts: EditorWindowOpenOptions) => Promise<EditorWindowRef>;
+  /** 关闭某个窗口；不传则关闭全部 */
+  close: (ref?: EditorWindowRef) => Promise<void>;
+  closeAll: () => Promise<void>;
+  /** 弹窗挂载完成 → 申请初始文档 */
+  ready: (ref: EditorWindowRef) => Promise<void>;
+  /** 把工程快照广播给其它窗口 */
+  pushDoc: (project: unknown) => Promise<void>;
+  onInit: (cb: (payload: EditorWindowInitPayload) => void) => () => void;
+  onDoc: (cb: (project: unknown) => void) => () => void;
+  onClosed: (cb: (ref: EditorWindowRef) => void) => () => void;
+}
+
 export interface DeskApi {
   env: {
     isDesktop: boolean;
@@ -340,6 +393,8 @@ export interface DeskApi {
   app: DeskAppApi;
   watch: DeskWatchApi;
   window: DeskWindowApi;
+  /** 独立的编辑器窗口（真实 OS 窗口）；浏览器模式没有这个能力 */
+  editorWindow: DeskEditorWindowApi;
   onMenuAction: (cb: (action: MenuAction) => void) => () => void;
   /** 拖文件到窗口：拿到真实绝对路径（Electron 里 File.path 已废弃） */
   onFileDrop: (cb: (paths: string[], pos: { x: number; y: number }) => void) => () => void;
@@ -407,6 +462,16 @@ export interface DeskBridge {
     setTitle: (title: string) => R<void>;
     toggleDevTools: () => R<void>;
     toggleFullscreen: () => R<void>;
+  };
+  editorWindow: {
+    open: (opts: EditorWindowOpenOptions) => R<EditorWindowRef>;
+    close: (ref?: EditorWindowRef) => R<void>;
+    closeAll: () => R<void>;
+    ready: (ref: EditorWindowRef) => R<void>;
+    pushDoc: (project: unknown) => R<void>;
+    onInit: (cb: (payload: EditorWindowInitPayload) => void) => () => void;
+    onDoc: (cb: (project: unknown) => void) => () => void;
+    onClosed: (cb: (ref: EditorWindowRef) => void) => () => void;
   };
   onWatchEvent: (cb: (ev: WatchEvent) => void) => () => void;
   onMenuAction: (cb: (action: MenuAction) => void) => () => void;

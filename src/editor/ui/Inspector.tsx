@@ -6,11 +6,9 @@ import { editorStore, type Selection } from '../model/store';
 import { imageCssUrl, imageUrl, textureById, textureImage } from '../model/resolve';
 import { isDesktop, desk } from '../../platform/desk';
 import {
-  CHARACTER_STATS,
   DIRS,
   DIR_HINT,
   DIR_LABEL,
-  MAPUI_RANGE_STEPS,
   SKELETON_TEMPLATES,
   TEXTURE_TEMPLATES,
   croppedSize,
@@ -27,8 +25,10 @@ import {
   type TextureAsset,
   type TextureTemplate,
 } from '../model/types';
-import { GroundPanel } from './GroundPanel';
-import { GroupSlot, RefSlot, ScriptSlot, TexSlot } from './AssetPicker';
+import { RefSlot, ScriptSlot, TexSlot } from './AssetPicker';
+import { ComponentPanel } from './ComponentPanel';
+import { ensureNodeComponents, nodeComponents } from '../model/componentHost';
+import { onComponentRegistryChange } from '../../runtime/scriptRegistry';
 import { SceneIcon } from './SceneIcons';
 import { T, btnStyle, inputStyle, sectionTitle } from './theme';
 
@@ -692,14 +692,10 @@ function AnimationInspector({ project, animId, onOpen }: { project: ProjectDoc; 
 export function SceneInspector({
   project,
   node,
-  onOpenStateMachine,
-  onOpenController,
   onOpenScript,
 }: {
   project: ProjectDoc;
   node: SceneNode;
-  onOpenStateMachine: (id: string) => void;
-  onOpenController: (id: string) => void;
   onOpenScript: (id: string) => void;
 }) {
   const meta = sceneKindMeta(node.kind);
@@ -708,30 +704,54 @@ export function SceneInspector({
   const [name, setName] = useState(node.name);
   const [focused, setFocused] = useState(false);
   const [scriptDropHot, setScriptDropHot] = useState(false);
-  /** 「＋ 添加脚本」点出来的空槽数量：空槽还没填脚本时是 UI 状态，不写进工程数据 */
-  const [pendingScripts, setPendingScripts] = useState(0);
   if (!focused && name !== node.name) setName(node.name);
 
-  // 换到别的对象时丢掉没填的空槽
-  useEffect(() => {
-    setPendingScripts(0);
-  }, [node.id]);
-
   const scriptIds = node.scriptIds ?? [];
+  /** 老式钩子脚本（kind='hook'）仍显示成脚本槽；组件脚本一律按组件区块渲染 */
+  const hookIds = scriptIds.filter((id) => project.scripts.find((s) => s.id === id)?.kind === 'hook');
+  const isComponentScript = (id: string) => project.scripts.find((s) => s.id === id)?.kind !== 'hook';
 
-  /** 往节点上追加脚本（去重） */
+  /* ---- 组件脚本：属性面板的主体来自这里 ---- */
+  const [, setCompTick] = useState(0);
+  useEffect(() => onComponentRegistryChange(() => setCompTick((n) => n + 1)), []);
+  const componentKey = (node.componentIds ?? []).join(',');
+  useEffect(() => {
+    void ensureNodeComponents(node, project);
+    // componentKey 变了要重新编译新挂上的脚本
+  }, [node.id, componentKey, project]);
+  const comps = nodeComponents(node, project);
+
+  /** 往节点上追加脚本（去重）：组件脚本挂到组件列表，老钩子脚本挂到脚本槽 */
   const attachScripts = (ids: string[]) => {
-    const next = [...scriptIds];
-    for (const id of ids) if (id && !next.includes(id)) next.push(id);
-    if (next.length !== scriptIds.length) editorStore.setNodeScripts(node.id, next);
+    const comps = ids.filter((id) => id && isComponentScript(id));
+    const hooks = ids.filter((id) => id && !isComponentScript(id));
+    if (comps.length) {
+      const next = [...(node.componentIds ?? [])];
+      for (const id of comps) if (!next.includes(id)) next.push(id);
+      if (next.length !== (node.componentIds ?? []).length) editorStore.setNodeComponents(node.id, next);
+    }
+    if (hooks.length) {
+      const next = [...scriptIds];
+      for (const id of hooks) if (!next.includes(id)) next.push(id);
+      if (next.length !== scriptIds.length) editorStore.setNodeScripts(node.id, next);
+    }
   };
 
-  /** 换 / 卸已挂槽位上的脚本 */
-  const replaceScriptAt = (index: number, id: string | null) => {
+  /** 换 / 卸已挂槽位上的脚本（槽位只承载老钩子脚本） */
+  const replaceScriptAt = (id: string | null, at: string) => {
     const next = [...scriptIds];
-    if (id) next[index] = id;
-    else next.splice(index, 1);
-    editorStore.setNodeScripts(node.id, next.filter((x, i) => !!x && next.indexOf(x) === i));
+    const i = next.indexOf(at);
+    if (i < 0) return;
+    if (id) next[i] = id;
+    else next.splice(i, 1);
+    editorStore.setNodeScripts(node.id, next.filter((x, k) => !!x && next.indexOf(x) === k));
+  };
+
+  /** 「＋ 添加脚本」：直接新建一个组件脚本并挂到当前对象（渲染成和系统组件一样的区块） */
+  const addComponentScript = () => {
+    const id = editorStore.addScript(undefined, undefined, { select: false });
+    if (!id) return;
+    editorStore.setNodeComponents(node.id, [...(node.componentIds ?? []), id]);
   };
 
   const commitName = () => {
@@ -771,50 +791,15 @@ export function SceneInspector({
         />
       </Field>
 
-      {/* 时间 / 天气是全局设置，摆位置没意义，改成说明占位 */}
-      {node.kind === 'mapui' && node.mapui && (
-        <Field label="屏幕位置 X / Y（像素，拖框也能改）">
-          <div style={{ display: 'flex', gap: 6 }}>
-            {(['sx', 'sy'] as const).map((axis) => (
-              <input
-                key={axis}
-                type="number"
-                step={1}
-                value={axis === 'sx' ? node.mapui!.sx : node.mapui!.sy}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  if (Number.isFinite(v)) editorStore.setMapui(node.id, axis === 'sx' ? { sx: v } : { sy: v }, `mapui-pos:${node.id}`);
-                }}
-                style={{ ...inputStyle, flex: 1 }}
-              />
-            ))}
-          </div>
-        </Field>
-      )}
-      {node.kind !== 'time' && node.kind !== 'weather' && node.kind !== 'mapui' && (
-        <Field label="位置 X / Z（场景单位，0.5 网格吸附）">
-          <div style={{ display: 'flex', gap: 6 }}>
-            {(['x', 'z'] as const).map((axis) => (
-              <input
-                key={axis}
-                type="number"
-                step={0.5}
-                value={axis === 'x' ? node.x : node.z}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  if (Number.isFinite(v)) editorStore.moveSceneNodeTo(node.id, axis === 'x' ? v : node.x, axis === 'z' ? v : node.z);
-                }}
-                style={{ ...inputStyle, flex: 1 }}
-              />
-            ))}
-          </div>
-        </Field>
-      )}
+      {/* —— 属性主体：全部由挂载的组件脚本驱动（字段注解决定控件） —— */}
+      <div style={{ margin: '2px -10px 0', borderTop: `1px solid ${T.lineSoft}`, padding: '8px 10px 0' }}>
+        <ComponentPanel project={project} node={node} components={comps} onOpenScript={onOpenScript} />
+      </div>
 
-      {(node.kind === 'time' || node.kind === 'weather' || node.kind === 'camera') && (
+      {(node.kind === 'time' || node.kind === 'weather') && (
         <div
           style={{
-            margin: '4px 0 2px',
+            margin: '8px 0 2px',
             padding: '9px 10px',
             border: `1px dashed ${T.line}`,
             borderRadius: 5,
@@ -824,265 +809,12 @@ export function SceneInspector({
           }}
         >
           <div style={{ color: T.text, fontSize: 11.5, marginBottom: 4 }}>
-            {node.kind === 'time' ? '时间系统（仅占位）' : node.kind === 'weather' ? '天气系统（仅占位）' : '摄像头（仅占位）'}
+            {node.kind === 'time' ? '时间系统（仅占位）' : '天气系统（仅占位）'}
           </div>
           {node.kind === 'time'
             ? '之后会挂：四季（春 / 夏 / 秋 / 冬）循环、白天黑夜切换。现在只把对象放进场景，参数和运行时逻辑都还没做。'
-            : node.kind === 'weather'
-              ? '之后会挂：晴 / 雨 / 雪 / 雾等天气切换与表现。现在只把对象放进场景，参数和运行时逻辑都还没做。'
-              : '运行时相机固定 45° 俯角、跟随角色。这个节点先占位：之后挂跟随目标 / 角度 / 距离等参数，现在点「▶」运行用的是内置的跟随相机。'}
+            : '之后会挂：晴 / 雨 / 雪 / 雾等天气切换与表现。现在只把对象放进场景，参数和运行时逻辑都还没做。'}
         </div>
-      )}
-
-      {node.kind === 'character' && (
-        <div style={{ margin: '6px -10px 2px', borderTop: `1px solid ${T.lineSoft}`, padding: '10px 10px 0' }}>
-          <div style={sectionTitle}>角色</div>
-          <Field label="角色名（留空就用上面的对象名）">
-            <input
-              value={node.character?.name ?? ''}
-              placeholder="未命名"
-              onChange={(e) => editorStore.setCharacter(node.id, { name: e.target.value }, `char-name:${node.id}`)}
-              style={inputStyle}
-            />
-          </Field>
-
-          <Field label="动画">
-            <RefSlot
-              project={project}
-              kind="animation"
-              value={node.character?.animationId ?? null}
-              onChange={(id) => editorStore.setCharacter(node.id, { animationId: id })}
-            />
-          </Field>
-
-          <Field label="状态机" hint="变量来源由状态机自己决定，见状态机属性">
-            <RefSlot
-              project={project}
-              kind="statemachine"
-              value={node.character?.stateMachineId ?? null}
-              onChange={(id) => editorStore.setCharacter(node.id, { stateMachineId: id })}
-              onEdit={onOpenStateMachine}
-            />
-          </Field>
-
-          <Field label="控制器（可多个，运行时全部生效）" hint="按键 → 变量；状态机读变量判断流转">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              {(node.character?.controllerIds ?? []).map((cid) => {
-                const c = project.controllers.find((x) => x.id === cid) ?? null;
-                return (
-                  <div
-                    key={cid}
-                    data-char-controller
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      border: `1px solid ${T.lineSoft}`,
-                      borderRadius: 4,
-                      padding: '4px 6px',
-                      background: T.bg2,
-                    }}
-                  >
-                    <span style={{ flex: 1, minWidth: 0, fontSize: 11, color: c ? T.text : T.dimmer, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {c?.name ?? '（控制器已删除）'}
-                    </span>
-                    <span style={{ fontSize: 9.5, color: T.dimmer }}>{c ? `${c.vars.length} 变量` : ''}</span>
-                    {c && (
-                      <button onClick={() => onOpenController(c.id)} style={{ ...btnStyle, padding: '1px 6px', fontSize: 10 }}>
-                        编辑
-                      </button>
-                    )}
-                    <button
-                      onClick={() =>
-                        editorStore.setCharacterControllers(
-                          node.id,
-                          (node.character?.controllerIds ?? []).filter((x) => x !== cid),
-                        )
-                      }
-                      title="解绑这个控制器"
-                      style={{ ...btnStyle, padding: '1px 6px', fontSize: 10, color: T.dimmer }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                );
-              })}
-              <select
-                value=""
-                onChange={(e) => {
-                  const id = e.target.value;
-                  if (!id) return;
-                  editorStore.setCharacterControllers(node.id, [...(node.character?.controllerIds ?? []), id]);
-                }}
-                style={{ ...inputStyle, fontSize: 10.5, padding: '3px 4px' }}
-              >
-                <option value="">＋ 添加控制器…</option>
-                {project.controllers
-                  .filter((c) => !(node.character?.controllerIds ?? []).includes(c.id))
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}（{c.vars.length} 变量 / {c.bindings.length} 事件）
-                    </option>
-                  ))}
-              </select>
-            </div>
-          </Field>
-
-          {/* 小地图：显示开关 + 图标（minimapShow / minimapIcon 存在节点上） */}
-          <div style={{ ...sectionTitle, marginTop: 12 }}>小地图</div>
-          <Field label="在地图上显示">
-            <div style={{ display: 'flex', gap: 4 }}>
-              {[
-                { v: true, name: '显示' },
-                { v: false, name: '隐藏' },
-              ].map((o) => (
-                <button
-                  key={String(o.v)}
-                  onClick={() => editorStore.setNodeMinimap(node.id, { minimapShow: o.v })}
-                  style={{
-                    ...btnStyle,
-                    flex: 1,
-                    fontSize: 10.5,
-                    color: (node.minimapShow ?? true) === o.v ? '#1a1410' : T.text,
-                    background: (node.minimapShow ?? true) === o.v ? T.accent : T.bg3,
-                    borderColor: (node.minimapShow ?? true) === o.v ? T.accent : T.line,
-                  }}
-                >
-                  {o.name}
-                </button>
-              ))}
-            </div>
-          </Field>
-          <Field label="显示图标" hint="从小地图用哪个「图组」当图标；不选就是默认圆点。也可以从底部资源把图组拖到槽上">
-            <div data-minimap-icon>
-              <GroupSlot
-                project={project}
-                value={{ id: node.minimapIcon ?? null }}
-                thumbSize={36}
-                label="选择图组"
-                hint={
-                  node.minimapIcon
-                    ? `图组 · ${project.textures.find((t) => t.id === node.minimapIcon)?.name ?? '（已删除）'}`
-                    : '点图框选「图组」目录里的图组'
-                }
-                onChange={(v) => editorStore.setNodeMinimap(node.id, { minimapIcon: v.id })}
-              />
-            </div>
-          </Field>
-
-          <div style={{ ...sectionTitle, marginTop: 12 }}>数值</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-            {CHARACTER_STATS.map((stat) => (
-              <label key={stat.key} title={stat.hint} style={{ fontSize: 10.5, color: T.dim }}>
-                {stat.name}
-                <input
-                  type="number"
-                  min={stat.min}
-                  max={stat.max}
-                  step={stat.step}
-                  value={node.character?.[stat.key] ?? 0}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    if (Number.isFinite(v)) editorStore.setCharacter(node.id, { [stat.key]: v }, `char-${stat.key}:${node.id}`);
-                  }}
-                  style={{ ...inputStyle, marginTop: 2 }}
-                />
-              </label>
-            ))}
-          </div>
-          <div style={{ fontSize: 9.5, color: T.dimmer, marginTop: 6, lineHeight: 1.7 }}>
-            字段：blood / satiation / mental / speed / attack；状态机条件里可以直接比较这些量。
-          </div>
-        </div>
-      )}
-
-      {node.kind === 'ground' && (
-        <div style={{ margin: '6px -10px 2px', borderTop: `1px solid ${T.lineSoft}` }}>
-          <GroundPanel project={project} node={node} />
-        </div>
-      )}
-
-      {node.kind === 'mapui' && node.mapui && (
-        <>
-          <Field label="形状">
-            <div style={{ display: 'flex', gap: 6 }}>
-              {(
-                [
-                  { id: 'circle', label: '圆形' },
-                  { id: 'rect', label: '方形' },
-                ] as const
-              ).map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => editorStore.setMapui(node.id, { shape: s.id })}
-                  style={{
-                    ...btnStyle,
-                    flex: 1,
-                    fontSize: 11,
-                    color: node.mapui!.shape === s.id ? '#1a1410' : T.text,
-                    background: node.mapui!.shape === s.id ? T.accent : T.bg3,
-                    borderColor: node.mapui!.shape === s.id ? T.accent : T.line,
-                  }}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
-          </Field>
-
-          <Field label="显示范围（档位）">
-            <div style={{ display: 'flex', gap: 4 }}>
-              {MAPUI_RANGE_STEPS.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => editorStore.setMapui(node.id, { range: s.id })}
-                  title={s.radius === Infinity ? '永远显示' : `玩家进入 ${s.radius} 单位内才显示`}
-                  style={{
-                    ...btnStyle,
-                    flex: 1,
-                    fontSize: 11,
-                    padding: '4px 0',
-                    color: node.mapui!.range === s.id ? '#1a1410' : T.text,
-                    background: node.mapui!.range === s.id ? T.accent : T.bg3,
-                    borderColor: node.mapui!.range === s.id ? T.accent : T.line,
-                  }}
-                >
-                  {s.name}
-                </button>
-              ))}
-            </div>
-            <div style={{ fontSize: 10, color: T.dimmer, marginTop: 4 }}>
-              {node.mapui.range === 'always' ? '游戏运行时永远显示' : `运行时玩家进入 ${MAPUI_RANGE_STEPS.find((s) => s.id === node.mapui!.range)?.radius} 单位内才显示（编辑器里不预览）`}
-            </div>
-          </Field>
-
-          <Field label={`框大小（${node.mapui.size}px）`}>
-            <input
-              type="range"
-              min={48}
-              max={640}
-              step={4}
-              value={node.mapui.size}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                if (Number.isFinite(v)) editorStore.setMapui(node.id, { size: v }, `mapui-size:${node.id}`);
-              }}
-              style={{ width: '100%', accentColor: T.accent }}
-            />
-          </Field>
-
-          <Field label="装饰贴图（沿框边装饰）">
-            <TexSlot
-              project={project}
-              loopable
-              thumbSize={36}
-              label="内置样式"
-              hint="从「贴图」目录选装饰贴图"
-              value={{ id: node.mapui.decorId, color: node.mapui.decorColor ?? null, loop: node.mapui.decorLoop ?? true }}
-              onChange={(v) => editorStore.setMapui(node.id, { decorId: v.id, decorColor: v.color ?? null, decorLoop: v.loop ?? true })}
-            />
-          </Field>
-        </>
       )}
 
       <Field label="层级">
@@ -1120,9 +852,7 @@ export function SceneInspector({
             .map((s) => s.slice('script:'.length));
           if (ids.length === 0) return;
           e.preventDefault();
-          const next = [...(node.scriptIds ?? [])];
-          for (const sid of ids) if (!next.includes(sid)) next.push(sid);
-          editorStore.setNodeScripts(node.id, next);
+          attachScripts(ids);
         }}
         style={{
           margin: '10px -10px 2px',
@@ -1131,73 +861,38 @@ export function SceneInspector({
           background: scriptDropHot ? 'rgba(201,135,58,.08)' : 'transparent',
         }}
       >
-        <div style={sectionTitle}>脚本</div>
-        <Field
-          label={`脚本（${scriptIds.length}）`}
-          hint="JS 生命周期钩子；编辑态不执行脚本。点「＋ 添加脚本」出一个空槽，点空槽选，或把脚本从资源浏览器拖进空槽 / 这个区块"
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            {scriptIds.map((sid, i) => (
-              <div key={sid} data-node-script>
-                <ScriptSlot
-                  project={project}
-                  value={sid}
-                  badge={String(i + 1)}
-                  onEdit={(id) => onOpenScript(id)}
-                  onOpenInEditor={
-                    isDesktop
-                      ? (id) => {
-                          const s = project.scripts.find((x) => x.id === id);
-                          if (s) void desk.app.openInEditor(desk.path.join(project.root, scriptFileOf(project.scripts, s)));
-                        }
-                      : undefined
-                  }
-                  onCreate={() => editorStore.addScript(undefined, undefined, { select: false })}
-                  onChange={(id) => replaceScriptAt(i, id)}
-                />
-              </div>
-            ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          {/* 老式钩子脚本仍显示为脚本槽（组件脚本在上面的组件区块里） */}
+          {hookIds.map((sid, i) => (
+            <div key={sid} data-node-script>
+              <ScriptSlot
+                project={project}
+                value={sid}
+                badge={String(i + 1)}
+                onEdit={(id) => onOpenScript(id)}
+                onOpenInEditor={
+                  isDesktop
+                    ? (id) => {
+                        const s = project.scripts.find((x) => x.id === id);
+                        if (s) void desk.app.openInEditor(desk.path.join(project.root, scriptFileOf(project.scripts, s)));
+                      }
+                    : undefined
+                }
+                onCreate={() => editorStore.addScript(undefined, undefined, { select: false })}
+                onChange={(id) => replaceScriptAt(id, sid)}
+              />
+            </div>
+          ))}
 
-            {/* 「＋ 添加脚本」点出来的空槽：填上脚本就变成真实挂载项，✕ 可以取消这个空槽 */}
-            {Array.from({ length: pendingScripts }).map((_, i) => (
-              <div key={`pending-script-${i}`} data-node-script-empty>
-                <ScriptSlot
-                  project={project}
-                  value={null}
-                  badge="＋"
-                  alwaysClear
-                  emptyHint="空槽 · 点这里选脚本，或把脚本拖到这一行"
-                  onCreate={() => editorStore.addScript(undefined, undefined, { select: false })}
-                  onChange={(id) => {
-                    if (id) attachScripts([id]);
-                    setPendingScripts((n) => Math.max(0, n - 1));
-                  }}
-                />
-              </div>
-            ))}
-
-            <button
-              data-add-node-script
-              onClick={() => setPendingScripts((n) => n + 1)}
-              title="在下面加一个空的脚本槽，再点它选脚本，或把脚本拖进去；可以连点加多个"
-              style={{ ...btnStyle, fontSize: 10.5, padding: '4px 8px', whiteSpace: 'nowrap', width: '100%' }}
-            >
-              ＋ 添加脚本
-            </button>
-          </div>
-        </Field>
-      </div>
-
-      <div style={{ display: 'flex', gap: 6, marginTop: 14 }}>
-        <button onClick={() => editorStore.duplicateSceneNode(node.id)} style={{ ...btnStyle, flex: 1, fontSize: 11 }}>
-          复制一份
-        </button>
-        <button
-          onClick={() => editorStore.deleteSceneNode(node.id)}
-          style={{ ...btnStyle, flex: 1, fontSize: 11, color: T.danger, borderColor: T.danger }}
-        >
-          删除
-        </button>
+          <button
+            data-add-node-script
+            onClick={addComponentScript}
+            title="新建一个组件脚本并挂到当前对象（和系统组件一样，按注解生成属性）"
+            style={{ ...btnStyle, fontSize: 10.5, padding: '4px 8px', whiteSpace: 'nowrap', width: '100%' }}
+          >
+            ＋ 添加脚本
+          </button>
+        </div>
       </div>
 
       <div style={{ fontSize: 10, color: T.dimmer, marginTop: 10, lineHeight: 1.8 }}>

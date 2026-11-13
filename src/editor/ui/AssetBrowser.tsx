@@ -37,6 +37,7 @@ import {
 import { ConfirmDialog, PromptDialog } from './Dialogs';
 import { ContextMenu, type MenuItem } from './Menu';
 import { T } from './theme';
+import { isDesktop } from '../../platform/desk';
 
 interface Props {
   project: ProjectDoc;
@@ -91,6 +92,12 @@ type IconKind =
 
 const refKey = (r: AssetRef) => `${r.kind}:${r.id}`;
 
+/** 开发模式下的固定目录：预设组件脚本（系统脚本）统一在这里展示 */
+const SYS_SCRIPT_FOLDER = '系统脚本';
+const isSysFolder = (p: string) => p === SYS_SCRIPT_FOLDER;
+/** 开发模式（桌面版）才显示系统脚本目录；浏览器模式预设脚本仍留在脚本目录里 */
+const SHOW_SYS_FOLDER = isDesktop;
+
 export function AssetBrowser(props: Props) {
   const { project, selection } = props;
   const [path, setPath] = useState<string>(project.folders[0] ?? ROOT_NAMES[0] ?? '');
@@ -107,9 +114,9 @@ export function AssetBrowser(props: Props) {
   const dragRef = useRef<AssetRef[]>([]);
   const anchorRef = useRef<string | null>(null);
 
-  const kindHere = project.folderKinds[path] ?? 'image';
+  const kindHere = isSysFolder(path) ? 'script' : (project.folderKinds[path] ?? 'image');
 
-  /** 左栏树：第一层固定目录 + 它们的子目录（深度用于缩进） */
+  /** 左栏树：第一层固定目录 + 它们的子目录（深度用于缩进）；开发模式末尾追加「系统脚本」 */
   const folderTree = useMemo(() => {
     const out: { path: string; depth: number }[] = [];
     const walk = (parent: string, depth: number) => {
@@ -125,15 +132,16 @@ export function AssetBrowser(props: Props) {
       out.push({ path: root, depth: 0 });
       walk(root, 1);
     }
+    if (SHOW_SYS_FOLDER) out.push({ path: SYS_SCRIPT_FOLDER, depth: 0 });
     return out;
   }, [project.folders, project.folderKinds]);
 
   /** 当前目录的直接子目录 */
   const subFolders = useMemo(() => project.folders.filter((f) => parentPath(f) === path), [project.folders, path]);
 
-  // 切工程 / 目录被规范化后回落
+  // 切工程 / 目录被规范化后回落（系统脚本固定目录一直有效）
   useEffect(() => {
-    if (!project.folders.includes(path)) setPath(project.folders[0] ?? ROOT_NAMES[0] ?? '');
+    if (path !== SYS_SCRIPT_FOLDER && !project.folders.includes(path)) setPath(project.folders[0] ?? ROOT_NAMES[0] ?? '');
   }, [project.folders, path]);
 
   const openMenu = (e: React.MouseEvent, items: MenuItem[]) => {
@@ -157,6 +165,23 @@ export function AssetBrowser(props: Props) {
 
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
+    // 系统脚本固定目录：只列预设组件脚本
+    if (isSysFolder(path)) {
+      for (const sc of project.scripts) {
+        if (!sc.preset) continue;
+        out.push({
+          kind: 'script',
+          id: sc.id,
+          name: sc.name,
+          sub: `${sc.code.split('\n').length} 行 · 系统`,
+          icon: 'script',
+          color: KIND_COLOR.script,
+          thumb: '',
+          preset: true,
+        });
+      }
+      return out.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
+    }
     for (const img of project.images) {
       if (img.folder !== path) continue;
       out.push({
@@ -220,6 +245,8 @@ export function AssetBrowser(props: Props) {
     }
     for (const sc of project.scripts) {
       if (sc.folder !== path) continue;
+      // 开发模式：预设脚本归入「系统脚本」固定目录，不在普通脚本目录里出现
+      if (SHOW_SYS_FOLDER && sc.preset) continue;
       out.push({
         kind: 'script',
         id: sc.id,
@@ -233,6 +260,9 @@ export function AssetBrowser(props: Props) {
     out.sort((a, b) => a.name.localeCompare(b.name, 'zh'));
     return out;
   }, [project, path, animThumb]);
+
+  /** 预设脚本的 id 集合（系统脚本不可删 / 不可拖 / 不可改名） */
+  const presetScriptIds = useMemo(() => new Set(project.scripts.filter((s) => s.preset).map((s) => s.id)), [project.scripts]);
 
   const selectedKeys = useMemo(() => new Set(sel.map(refKey)), [sel]);
 
@@ -288,6 +318,11 @@ export function AssetBrowser(props: Props) {
   /* ---------------- 拖拽 ---------------- */
 
   const startDrag = (e: React.DragEvent, row: Row) => {
+    // 系统脚本：不允许拖拽（不能移动目录，也不能拖进场景/资源槽）
+    if (row.preset) {
+      e.preventDefault();
+      return;
+    }
     const key = refKey(row);
     const refs = selectedKeys.has(key) ? sel : [{ kind: row.kind, id: row.id }];
     if (!selectedKeys.has(key)) setSel(refs);
@@ -342,6 +377,12 @@ export function AssetBrowser(props: Props) {
 
   /** 目录项右键：第一层只能建子目录，子目录还能改名 / 删除 */
   const folderMenu = (target: string): MenuItem[] => {
+    if (isSysFolder(target)) {
+      return [
+        { label: '系统脚本 · 属性面板的预设组件', disabled: true },
+        { label: '可以打开编辑代码，不能删除或移动', disabled: true },
+      ];
+    }
     const root = isRootFolder(target);
     const items: MenuItem[] = [
       { label: '新建目录', onClick: () => setPrompt({ mode: 'new', parent: target, value: '新建目录' }) },
@@ -364,6 +405,13 @@ export function AssetBrowser(props: Props) {
 
   /** 右栏空白处右键：新建目录 + 当前目录类型能放的东西 */
   const contentMenu = (): MenuItem[] => {
+    // 系统脚本固定目录：不可新建任何东西
+    if (isSysFolder(path)) {
+      return [
+        { label: '系统脚本随工程自动生成，随打开自动恢复', disabled: true },
+        { label: '双击脚本即可编辑代码', disabled: true },
+      ];
+    }
     const newFolder: MenuItem = {
       label: '新建目录',
       hint: '分组',
@@ -443,10 +491,33 @@ export function AssetBrowser(props: Props) {
 
   const itemMenu = (row: Row): MenuItem[] => {
     if (sel.length > 1 && selectedKeys.has(refKey(row))) {
+      // 系统脚本不参与批量删除：从待删列表里剔除
+      const deletable = sel.filter((s) => !(s.kind === 'script' && presetScriptIds.has(s.id)));
+      if (deletable.length === 0) {
+        return [{ label: '选中的都是系统脚本，不可删除', disabled: true }, { type: 'sep' }, { label: '取消选择', hint: 'Esc', onClick: () => setSel([]) }];
+      }
+      const hasPreset = deletable.length !== sel.length;
       return [
-        { label: `删除选中的 ${sel.length} 项`, danger: true, onClick: () => props.onDeleteMany(sel) },
+        { label: `删除选中的 ${deletable.length} 项${hasPreset ? '（系统脚本除外）' : ''}`, danger: true, onClick: () => props.onDeleteMany(deletable) },
         { type: 'sep' },
         { label: '取消选择', hint: 'Esc', onClick: () => setSel([]) },
+      ];
+    }
+    // 系统脚本：开发环境（桌面版）只可编辑（打开编辑器 / VS Code），不能重命名 / 删除；
+    // 浏览器模式不可编辑，只展示说明
+    if (row.preset) {
+      if (!isDesktop) {
+        return [
+          { label: '系统脚本 · 随对象类型自动挂载', disabled: true },
+          { label: '只能在开发环境（桌面版）中编辑', disabled: true },
+        ];
+      }
+      const vs = props.onOpenScriptInVscode;
+      return [
+        ...(vs ? [{ label: '使用 VS Code 编辑', onClick: () => vs(row.id) }] : []),
+        { label: '打开编辑器', hint: '双击', onClick: () => props.onOpenScript(row.id) },
+        { type: 'sep' },
+        { label: '系统脚本 · 只可编辑，不可删除 / 移动', disabled: true },
       ];
     }
     const common: MenuItem[] = [
@@ -508,19 +579,25 @@ export function AssetBrowser(props: Props) {
         <div style={{ flex: 1, overflow: 'auto', minHeight: 0, padding: '4px 0' }}>
           {folderTree.map(({ path: f, depth }) => {
             const active = path === f;
-            const kind = project.folderKinds[f] ?? 'image';
+            const sys = isSysFolder(f);
+            const kind = sys ? 'script' : (project.folderKinds[f] ?? 'image');
             const isDrop = dropTarget === f;
             const root = isRootFolder(f);
+            const count = sys
+              ? project.scripts.filter((s) => s.preset).length
+              : root
+                ? assetCount(project, f, SHOW_SYS_FOLDER)
+                : deepAssetCount(project, f, SHOW_SYS_FOLDER);
             return (
               <div
                 key={f}
-                data-folder-row
+                data-folder-row={sys ? 'sys-scripts' : undefined}
                 onClick={() => setPath(f)}
                 onContextMenu={(e) => openMenu(e, folderMenu(f))}
-                onDragOver={(e) => dragOverTarget(e, f)}
-                onDragLeave={() => setDropTarget((d) => (d === f ? null : d))}
-                onDrop={(e) => dropOnTarget(e, f)}
-                title={`${f}（${KIND_LABEL[kind]}目录）`}
+                onDragOver={sys ? undefined : (e) => dragOverTarget(e, f)}
+                onDragLeave={sys ? undefined : () => setDropTarget((d) => (d === f ? null : d))}
+                onDrop={sys ? undefined : (e) => dropOnTarget(e, f)}
+                title={sys ? `${SYS_SCRIPT_FOLDER}（预设组件脚本 · 只可编辑）` : `${f}（${KIND_LABEL[kind]}目录）`}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -547,7 +624,7 @@ export function AssetBrowser(props: Props) {
                 <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {depth === 0 ? f : baseName(f)}
                 </span>
-                <span style={{ fontSize: 10, color: T.dimmer }}>{root ? assetCount(project, f) : deepAssetCount(project, f)}</span>
+                <span style={{ fontSize: 10, color: T.dimmer }}>{count}</span>
               </div>
             );
           })}
@@ -602,7 +679,7 @@ export function AssetBrowser(props: Props) {
             }}
           >
             {/* 子目录里第一项是「上一级」（第一层固定目录不需要） */}
-            {!isRootFolder(path) && (
+            {!isRootFolder(path) && !isSysFolder(path) && (
               <FileTile
                 key="__up__"
                 icon="folder-up"
@@ -629,7 +706,7 @@ export function AssetBrowser(props: Props) {
                   icon="folder"
                   color={KIND_COLOR[kindHere]}
                   label={baseName(f)}
-                  sub={`目录 · ${deepAssetCount(project, f)} 项`}
+                  sub={`目录 · ${deepAssetCount(project, f, SHOW_SYS_FOLDER)} 项`}
                   active={pickedFolder === f}
                   onClick={() => setPickedFolder(f)}
                   onDoubleClick={() => setPath(f)}
@@ -661,8 +738,9 @@ export function AssetBrowser(props: Props) {
                   else if (row.kind === 'statemachine') props.onOpenStateMachine(row.id);
                   else if (row.kind === 'controller') props.onOpenController(row.id);
                   else if (row.kind === 'script') {
-                    // 双击 = 打开脚本编辑器（右键菜单里有「使用 VS Code 编辑」）
-                    props.onOpenScript(row.id);
+                    // 双击 = 打开脚本编辑器（右键菜单里有「使用 VS Code 编辑」）；
+                    // 预设脚本只有开发环境（桌面版）能编辑
+                    if (!row.preset || isDesktop) props.onOpenScript(row.id);
                   }
                   else if (row.kind === 'image') props.onCropImage(row.id);
                 }}
@@ -686,11 +764,21 @@ export function AssetBrowser(props: Props) {
                   lineHeight: 1.9,
                 }}
               >
-                这个目录是空的
-                <br />
-                {kindHere === 'image' || kindHere === 'texture' || kindHere === 'animation' || kindHere === 'statemachine' || kindHere === 'controller' || kindHere === 'script'
-                  ? `右键新建${KIND_LABEL[kindHere]}或目录`
-                  : `右键可以新建子目录；${KIND_LABEL[kindHere]}的资产结构还没接`}
+                {isSysFolder(path) ? (
+                  <>
+                    还没有系统脚本
+                    <br />
+                    打开工程时会自动生成预设组件脚本
+                  </>
+                ) : (
+                  <>
+                    这个目录是空的
+                    <br />
+                    {kindHere === 'image' || kindHere === 'texture' || kindHere === 'animation' || kindHere === 'statemachine' || kindHere === 'controller' || kindHere === 'script'
+                      ? `右键新建${KIND_LABEL[kindHere]}或目录`
+                      : `右键可以新建子目录；${KIND_LABEL[kindHere]}的资产结构还没接`}
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -754,6 +842,8 @@ interface Row {
   icon: IconKind;
   color: string;
   thumb: string;
+  /** 系统脚本（预设组件）：只可编辑，不可拖拽 / 删除 */
+  preset?: boolean;
 }
 
 function templateName(anim: AnimationAsset): string {

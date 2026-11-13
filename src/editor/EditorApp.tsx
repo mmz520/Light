@@ -4,11 +4,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { desk, isDesktop } from '../platform/desk';
 import { editorStore, useEditor, type Selection } from './model/store';
-import { SKELETON_TEMPLATES, sceneKindMeta, scriptFileOf, type AssetRef, type ImageAsset, type SceneNode } from './model/types';
+import { preloadComponents } from '../runtime/scriptRegistry';
+import { useDocSync } from './model/docSync';
+import { windowCaption } from './popup/PopupWindow';
+import { sceneKindMeta, scriptFileOf, type AssetRef, type ImageAsset, type ProjectDoc, type SceneNode } from './model/types';
 import { AnimationWorkbench } from './ui/AnimationWorkbench';
 import { StateMachineWorkbench } from './ui/StateMachineWorkbench';
 import { ControllerWorkbench } from './ui/ControllerWorkbench';
 import { ScriptWorkbench } from './ui/ScriptWorkbench';
+import { ApiHelpWindow } from './ui/ApiHelp';
+import type { EditorWindowKind } from '../shared/ipc';
 import { AssetBrowser } from './ui/AssetBrowser';
 import { CropDialog } from './ui/CropDialog';
 import { Code, ConfirmDialog, InfoDialog, PromptDialog } from './ui/Dialogs';
@@ -22,14 +27,19 @@ import { T, FONT } from './ui/theme';
 
 interface EditorWin {
   id: string;
-  kind: 'animation' | 'statemachine' | 'controller' | 'script';
+  kind: EditorWindowKind;
   refId: string;
   rect: WinRect;
   z: number;
 }
 
+/** 桌面版默认用真实 OS 窗口；浏览器版 / 自检模式（?inline-windows=1）用页内浮窗 */
+const INLINE_WINDOWS =
+  !isDesktop || new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search).has('inline-windows');
+
 export function EditorApp() {
   const state = useEditor();
+  useDocSync();
   const [leftW, setLeftW] = useState(224);
   const [rightW, setRightW] = useState(306);
   const [bottomH, setBottomH] = useState(226);
@@ -46,9 +56,40 @@ export function EditorApp() {
   const [about, setAbout] = useState(false);
   const [structure, setStructure] = useState(false);
 
+  const projectRoot = state.project?.root ?? null;
+
   useEffect(() => {
     void editorStore.boot();
   }, []);
+
+  // 预设组件脚本：打开工程后确保它们存在，并给还没有组件的老节点挂上默认组件（幂等）。
+  // 注意：必须放在所有提前 return（booting / welcome）之前 —— hooks 不能在条件分支后面，
+  // 否则首帧 booting 提前 return 后 hooks 数量变化，React 直接崩掉整棵树（白屏，React #310）。
+  const componentSig = (state.project?.scripts ?? [])
+    .filter((sc) => sc.kind !== 'hook')
+    .map((sc) => `${sc.id}:${sc.code.length}`)
+    .join(',');
+  useEffect(() => {
+    editorStore.ensurePresetComponents();
+  }, [projectRoot]);
+  useEffect(() => {
+    if (!projectRoot) return;
+    void preloadComponents((state.project?.scripts ?? []).filter((sc) => sc.kind !== 'hook'));
+    // componentSig 变了说明有脚本新建/改码，重新编译（loadComponent 内部按源码缓存）
+  }, [componentSig, projectRoot]);
+
+  /* 真实窗口：关掉一个就同步窗口计数；换工程则整批关掉 */
+  useEffect(() => {
+    if (INLINE_WINDOWS) return;
+    return desk.editorWindow.onClosed((ref) => {
+      setWindows((ws) => ws.filter((w) => !(w.kind === ref.kind && w.refId === ref.refId)));
+    });
+  }, []);
+  useEffect(() => {
+    if (INLINE_WINDOWS) return;
+    setWindows([]);
+    void desk.editorWindow.closeAll();
+  }, [projectRoot]);
 
   /* 主进程菜单 → 界面 */
   useEffect(() => {
@@ -60,6 +101,21 @@ export function EditorApp() {
   }, []);
 
   const openWindow = useCallback((kind: EditorWin['kind'], refId: string) => {
+    if (!INLINE_WINDOWS) {
+      const cap = windowCaption(editorStore.project, kind, refId);
+      void desk.editorWindow
+        .open({
+          kind,
+          refId,
+          title: cap.title,
+          subtitle: cap.subtitle,
+          project: editorStore.project ?? undefined,
+        })
+        .catch(() => undefined);
+      // 只记一份引用，用来算窗口数量 / 统一关闭；真正的窗口在主进程
+      setWindows((ws) => (ws.some((w) => w.kind === kind && w.refId === refId) ? ws : [...ws, { id: `${kind}:${refId}`, kind, refId, rect: { x: 0, y: 0, w: 0, h: 0 }, z: 0 }]));
+      return;
+    }
     setWindows((ws) => {
       const z = ++zRef.current;
       const hit = ws.find((w) => w.kind === kind && w.refId === refId);
@@ -89,6 +145,19 @@ export function EditorApp() {
   const openStateMachine = useCallback((smId: string) => openWindow('statemachine', smId), [openWindow]);
   const openController = useCallback((ctrlId: string) => openWindow('controller', ctrlId), [openWindow]);
   const openScript = useCallback((scriptId: string) => openWindow('script', scriptId), [openWindow]);
+  /** 帮助 → 脚本 API 参考：只读文档窗口，不需要工程快照 */
+  const openApiHelp = useCallback(() => openWindow('help', 'script-api'), [openWindow]);
+
+  /* F1：任何时候都能打开脚本 API 文档（欢迎页也可以） */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'F1') return;
+      e.preventDefault();
+      openApiHelp();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [openApiHelp]);
 
   /** 双击脚本资产：桌面端用 VS Code（退回系统默认编辑器）打开源码文件；拉不起来就回内置编辑器 */
   const openScriptExternal = useCallback(
@@ -110,7 +179,6 @@ export function EditorApp() {
   );
 
   /* VS Code 侧保存脚本后回灌：监听 assets/scripts 目录，内容变了就读回来 */
-  const projectRoot = state.project?.root ?? null;
   useEffect(() => {
     if (!isDesktop || !projectRoot) return;
     let stopped = false;
@@ -162,7 +230,10 @@ export function EditorApp() {
       openStateMachine,
       openController,
       openScript,
-      closeWindows: () => setWindows([]),
+      closeWindows: () => {
+        setWindows([]);
+        if (!INLINE_WINDOWS) void desk.editorWindow.closeAll();
+      },
       select: (kind: string, id: string) => editorStore.select(kind as Selection['kind'], id),
       selectScene: (id: string | null) => editorStore.selectScene(id),
       setPanels,
@@ -259,6 +330,21 @@ export function EditorApp() {
     return list.find((x) => x.id === sel.id)?.name ?? null;
   }
 
+  /* 页内浮窗层（桌面版走真实窗口；欢迎页只可能开帮助窗口） */
+  const floating = INLINE_WINDOWS ? (
+    <FloatingWindows
+      windows={windows}
+      project={state.project}
+      onRectChange={(id, rect) => setWindows((ws) => ws.map((x) => (x.id === id ? { ...x, rect } : x)))}
+      onClose={(id) => setWindows((ws) => ws.filter((x) => x.id !== id))}
+      onFocus={(id) => {
+        const z = ++zRef.current;
+        setWindows((ws) => ws.map((x) => (x.id === id ? { ...x, z } : x)));
+      }}
+      onOpenDocs={openApiHelp}
+    />
+  ) : null;
+
   const actions: MenuActions = {
     openProject: () => void editorStore.openProjectDialog(),
     newProject: () => setNewProject(true),
@@ -279,9 +365,13 @@ export function EditorApp() {
     togglePanel: (p) => setPanels((v) => ({ ...v, [p]: !v[p] })),
     reload: () => window.location.reload(),
     devTools: () => void desk.window.toggleDevTools(),
-    closeAllWindows: () => setWindows([]),
+    closeAllWindows: () => {
+      setWindows([]);
+      if (!INLINE_WINDOWS) void desk.editorWindow.closeAll();
+    },
     showAbout: () => setAbout(true),
     showStructure: () => setStructure(true),
+    showApiHelp: () => openApiHelp(),
   };
 
   /* ---------------- 首屏 ---------------- */
@@ -301,6 +391,7 @@ export function EditorApp() {
         <div style={{ flex: 1, minHeight: 0 }}>
           <Welcome />
         </div>
+        {floating}
         {newProject && <NewProjectDialog onClose={() => setNewProject(false)} />}
         {confirmMany && (
         <ConfirmDialog
@@ -375,13 +466,7 @@ export function EditorApp() {
               />
               <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
                 {sceneNode ? (
-                  <SceneInspector
-                    project={project}
-                    node={sceneNode}
-                    onOpenStateMachine={openStateMachine}
-                    onOpenController={openController}
-                    onOpenScript={openScript}
-                  />
+                  <SceneInspector project={project} node={sceneNode} onOpenScript={openScript} />
                 ) : (
                   <Inspector
                     project={project}
@@ -435,48 +520,8 @@ export function EditorApp() {
         </>
       )}
 
-      {/* 浮动编辑窗口：动画 / 状态机 / 控制器 */}
-      {windows.map((w) => (
-        <FloatingWindow
-          key={w.id}
-          title={
-            w.kind === 'animation'
-              ? project.animations.find((a) => a.id === w.refId)?.name ?? '动画'
-              : w.kind === 'controller'
-                ? project.controllers.find((c) => c.id === w.refId)?.name ?? '控制器'
-                : w.kind === 'script'
-                  ? project.scripts.find((s) => s.id === w.refId)?.name ?? '脚本'
-                  : project.stateMachines.find((s) => s.id === w.refId)?.name ?? '状态机'
-          }
-          subtitle={
-            w.kind === 'animation'
-              ? SKELETON_TEMPLATES.find((s) => s.id === project.animations.find((a) => a.id === w.refId)?.template)?.name
-              : w.kind === 'controller'
-                ? '变量 · 按键事件'
-                : w.kind === 'script'
-                  ? 'JS 脚本 · 生命周期钩子'
-                  : '流程图 · 状态 / 流转条件'
-          }
-          rect={w.rect}
-          zIndex={w.z}
-          onRectChange={(rect) => setWindows((ws) => ws.map((x) => (x.id === w.id ? { ...x, rect } : x)))}
-          onClose={() => setWindows((ws) => ws.filter((x) => x.id !== w.id))}
-          onFocus={() => {
-            const z = ++zRef.current;
-            setWindows((ws) => ws.map((x) => (x.id === w.id ? { ...x, z } : x)));
-          }}
-        >
-          {w.kind === 'animation' ? (
-            <AnimationWorkbench animId={w.refId} />
-          ) : w.kind === 'controller' ? (
-            <ControllerWorkbench ctrlId={w.refId} />
-          ) : w.kind === 'script' ? (
-            <ScriptWorkbench scriptId={w.refId} />
-          ) : (
-            <StateMachineWorkbench smId={w.refId} />
-          )}
-        </FloatingWindow>
-      ))}
+      {/* 浮动编辑窗口：动画 / 状态机 / 控制器 / 脚本 / 帮助（页内模式；桌面版是真实窗口） */}
+      {floating}
 
       {/* 弹窗 */}
       {newProject && <NewProjectDialog onClose={() => setNewProject(false)} />}
@@ -721,4 +766,61 @@ function StructureDialog({ onClose }: { onClose: () => void }) {
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.min(Math.max(v, lo), hi);
+}
+
+/**
+ * 页内浮窗层（浏览器模式 / 自检模式）。
+ * 桌面版这里是真实 OS 窗口，由主进程管理；两边外观与内容一致。
+ */
+function FloatingWindows({
+  windows,
+  project,
+  onRectChange,
+  onClose,
+  onFocus,
+  onOpenDocs,
+}: {
+  windows: EditorWin[];
+  project: ProjectDoc | null;
+  onRectChange: (id: string, rect: WinRect) => void;
+  onClose: (id: string) => void;
+  onFocus: (id: string) => void;
+  onOpenDocs: () => void;
+}) {
+  return (
+    <>
+      {windows.map((w) => {
+        const cap =
+          w.kind === 'help'
+            ? { title: '脚本 API 参考', subtitle: '快速开始 · 属性面板 · 运行时 API' }
+            : project
+              ? windowCaption(project, w.kind, w.refId)
+              : { title: '编辑器', subtitle: '' };
+        return (
+          <FloatingWindow
+            key={w.id}
+            title={cap.title}
+            subtitle={cap.subtitle}
+            rect={w.rect}
+            zIndex={w.z}
+            onRectChange={(rect) => onRectChange(w.id, rect)}
+            onClose={() => onClose(w.id)}
+            onFocus={() => onFocus(w.id)}
+          >
+            {w.kind === 'help' ? (
+              <ApiHelpWindow />
+            ) : !project ? null : w.kind === 'animation' ? (
+              <AnimationWorkbench animId={w.refId} />
+            ) : w.kind === 'controller' ? (
+              <ControllerWorkbench ctrlId={w.refId} />
+            ) : w.kind === 'script' ? (
+              <ScriptWorkbench scriptId={w.refId} onOpenDocs={onOpenDocs} />
+            ) : (
+              <StateMachineWorkbench smId={w.refId} />
+            )}
+          </FloatingWindow>
+        );
+      })}
+    </>
+  );
 }
